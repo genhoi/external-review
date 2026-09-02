@@ -26,6 +26,12 @@ cd "$FX"
 "$R" brief --lang ru | grep -q '^# Вводная'; pass "brief ru"
 ! "$R" brief --lang xx >/dev/null 2>&1; pass "brief rejects unknown language"
 
+echo "== preflight runs the command inside a snapshot"
+"$R" preflight '.venv/bin/pytest -q' 2>/dev/null | grep -q 'preflight OK'; pass "preflight OK on a working command"
+! "$R" preflight 'test -f THIS_FILE_DOES_NOT_EXIST' >/dev/null 2>&1; pass "preflight fails on a broken command"
+"$R" preflight 'test "$(basename "$PWD")" = snapshot && test -d .venv && test ! -L .venv' >/dev/null 2>&1; pass "preflight cwd is the snapshot with copied deps"
+[ -z "$(ls -d "$EXTERNAL_REVIEW_HOME"/runs/preflight-* 2>/dev/null | head -1)" ] || pass "failed preflight keeps its output for inspection"
+
 echo "== end-to-end with the stub reviewer"
 printf '# billing-lite\n\n## External review\n\n- Tests: `.venv/bin/pytest -q`\n- Known decisions: Store stub\n' > CLAUDE.md
 "$R" brief --lang en --out "$TMP/brief.md" 2>/dev/null
@@ -72,6 +78,6 @@ A="$("$R" run --reviewers fake --brief "$TMP/brief.md" --base main 2>/dev/null)"
 until "$R" wait "$A" --max 20 --interval 1 >/dev/null; do :; done; until "$R" wait "$B" --max 20 --interval 1 >/dev/null; do :; done
 
 echo "== clean"
-"$R" clean --all >/dev/null; [ -z "$(ls -A "$EXTERNAL_REVIEW_HOME/runs" 2>/dev/null)" ]; pass "clean --all"
+"$R" clean --all >/dev/null; [ -z "$(ls -A "$EXTERNAL_REVIEW_HOME/runs" 2>/dev/null)" ] || fail "runs left after clean --all: $(ls "$EXTERNAL_REVIEW_HOME/runs")"; pass "clean --all (runs and preflight dirs)"
 git -C "$FX" worktree list | grep -vq 'runs/' || fail "worktrees left behind"; pass "no worktrees left"
 echo "all good"

@@ -39,6 +39,7 @@ R=~/.claude/skills/external-review/bin/review
 
 $R doctor                        # which reviewers are available (keys/logins: references/setup.md)
 $R brief --out /tmp/brief.md     # fill it in: intent, cost of failure, how to run the tests
+$R preflight '.venv/bin/pytest'  # prove that command works inside a snapshot, not just in your checkout
 $R run --brief /tmp/brief.md     # snapshot + every available reviewer, in the background
 $R wait                          # ...or keep working and check `$R status` now and then
 $R collect                       # merged.md: findings table × reviewer + full reports

@@ -40,6 +40,7 @@ R=~/.claude/skills/external-review/bin/review
 $R config set REVIEW_LANG ru     # протокол и отчёты на русском (по умолчанию en)
 $R doctor                        # кто доступен (ключи и логины: references/setup.md)
 $R brief --out /tmp/brief.md     # заполнить: интент, цена ошибки, как запускать тесты
+$R preflight '.venv/bin/pytest'  # доказать, что команда работает в снапшоте, а не только в вашем checkout
 $R run --brief /tmp/brief.md     # снапшот + все доступные рецензенты в фоне
 $R wait                          # ...или заниматься своим делом и смотреть `$R status`
 $R collect                       # merged.md: таблица находок × рецензент + полные отчёты

@@ -29,13 +29,15 @@ review — a second opinion on code from other models
       --link PATH                       extra dependency path to bring in (repeatable;
                                         default: vendor node_modules .venv .env .env.local .env.test)
       --effort LEVEL                    effort for the claude family (default max)
+  review preflight "CMD" [--deps M]     run CMD inside a fresh snapshot (deps included) and show the result:
+                                        verify the test commands from the brief BEFORE spending reviewer time
   review status [RUN]                   progress (RUN = path or name; default: latest run of this project)
   review wait [RUN] [--max SEC]         wait; returns within ≤110 s: exit 0 = all done, exit 3 = call again
   review collect [RUN]                  build merged.md (findings table × reviewer + full reports)
   review ask RUN REVIEWER "question"    continue a reviewer's session (counter-evidence, clarification)
   review logs RUN REVIEWER              stderr tail and progress
   review runs                           runs of the current project
-  review clean [RUN|--all]              remove worktrees and the run directory
+  review clean [RUN|--all]              remove worktrees and the run directory (--all: every run and preflight of this project)
 USAGE
 }
 
@@ -232,8 +234,34 @@ PY
   echo "$run"
   local dr; dr="$(deps_report "$root" $links $extra_links)"
   [ -z "$dr" ] || echo "deps ($deps): $dr" >&2
+  if [ "$deps" = copy ]; then
+    local bytes; bytes=$(du -sbc $(for l in $links $extra_links; do [ -e "$root/$l" ] && echo "$root/$l"; done) 2>/dev/null | tail -n1 | cut -f1)
+    [ "${bytes:-0}" -lt 1073741824 ] || echo "hint: dependencies exceed 1 GB per snapshot — consider REVIEW_DEPS=hardlink (instant; do not edit their files in place)" >&2
+  fi
   echo "started: $list" >&2
   echo "progress: review status $run · wait: review wait $run · merge: review collect $run" >&2
+}
+
+cmd_preflight() {
+  local cmd="" deps="$REVIEW_DEPS" timeout="${EXTERNAL_REVIEW_PREFLIGHT_TIMEOUT:-900}" links="$ER_DEFAULT_LINKS" extra_links=""
+  while [ $# -gt 0 ]; do
+    case "$1" in --deps) deps="$2"; shift 2;; --link) extra_links="$extra_links $2"; shift 2;; --timeout) timeout="$2"; shift 2;;
+      *) [ -z "$cmd" ] || die "preflight: one command string expected (quote it)"; cmd="$1"; shift;; esac
+  done
+  [ -n "$cmd" ] || die 'preflight: usage: review preflight "<test command from the brief>" [--deps copy|hardlink|symlink|none]'
+  local root name dir snap_commit; root="$(proj_root)"; name="$(basename "$root")"
+  mkdir -p "$ER_RUNS"; dir="$(mktemp -d "$ER_RUNS/preflight-$name-XXXX")"
+  snap_commit="$(snapshot_commit "$root")"
+  make_worktree "$root" "$snap_commit" "$dir/snapshot" "$deps" $links $extra_links
+  local dr; dr="$(deps_report "$root" $links $extra_links)"; [ -z "$dr" ] || echo "deps ($deps): $dr" >&2
+  echo "snapshot: $dir/snapshot" >&2
+  echo "running:  $cmd" >&2
+  ( cd "$dir/snapshot" && timeout -k 30 "$timeout" bash -lc "$cmd" ) > "$dir/output" 2>&1; local code=$?
+  echo "--- output (last 30 lines) ---"; tail -n 30 "$dir/output"; echo "--- exit code: $code ---"
+  remove_worktree "$root" "$dir/snapshot"
+  if [ "$code" -eq 0 ]; then rm -rf "$dir"; echo "preflight OK — the command works inside a snapshot; the brief can say so"
+  else echo "preflight FAILED — fix the command or the project profile before launching reviewers (full output: $dir/output)"; fi
+  return "$code"
 }
 
 elapsed() { # elapsed DIR
@@ -315,7 +343,7 @@ cmd_runs() { ls -1d "$ER_RUNS/$(proj_name)"-* 2>/dev/null || echo "no runs"; }
 cmd_clean() {
   local root; root="$(proj_root)"
   local targets=()
-  if [ "${1:-}" = "--all" ]; then mapfile -t targets < <(ls -1d "$ER_RUNS/$(basename "$root")"-* 2>/dev/null)
+  if [ "${1:-}" = "--all" ]; then mapfile -t targets < <(ls -1d "$ER_RUNS/$(basename "$root")"-* "$ER_RUNS/preflight-$(basename "$root")"-* 2>/dev/null)
   else targets=("$(resolve_run "${1:-}")"); fi
   local run r
   for run in "${targets[@]}"; do
@@ -323,6 +351,7 @@ cmd_clean() {
       [ -f "$run/$r/pid" ] && kill "$(cat "$run/$r/pid")" 2>/dev/null
       remove_worktree "$root" "$run/$r/snapshot"
     done
+    [ ! -d "$run/snapshot" ] || remove_worktree "$root" "$run/snapshot"   # preflight dir
     rm -rf "$run"; echo "removed $run"
   done
   git -C "$root" worktree prune 2>/dev/null || true
@@ -333,6 +362,7 @@ case "${1:-}" in
   config) shift; cmd_config "$@";;
   brief) shift; cmd_brief "$@";;
   run) shift; cmd_run "$@";;
+  preflight) shift; cmd_preflight "$@";;
   status) shift; cmd_status "$@";;
   wait) shift; cmd_wait "$@";;
   collect) shift; cmd_collect "$@";;
