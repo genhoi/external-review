@@ -9,7 +9,7 @@
 | kimi | `claude -p` → api.kimi.com/coding | `k3[1m]` (`KIMI_MODEL`) | `--effort max` (= K3 max) | stream-json | как glm |
 | opus | `claude -p`, подписка Claude | `opus` (`OPUS_MODEL`) | `--effort max` | stream-json | как glm |
 | grok | `grok --prompt-file` | `grok-4.6` (`GROK_MODEL`) | `--effort xhigh` (максимум) | streaming-messages-json = формат claude stream-json | `-s` наш uuid → `--resume` |
-| codex | `codex exec` | из `~/.codex/config.toml` (`CODEX_MODEL`) | `-c model_reasoning_effort="xhigh"` | `--json` JSONL + `-o` последнее сообщение | `thread_id` из события `thread.started` → `codex exec resume` |
+| codex | `codex exec` | `gpt-5.6-sol` (`CODEX_MODEL`) | `-c model_reasoning_effort="xhigh"` | `--json` JSONL + `-o` последнее сообщение | `thread_id` из события `thread.started` → `codex exec resume` |
 | kimi-cli | `kimi -p` (OAuth) | `kimi-code/k3` (`KIMI_CLI_MODEL`) | из config.toml (`effort = "high"|"max"`) | stream-json (строки без `type`) | `session_id` из `session.resume_hint` → `-S` |
 
 Изоляция у всех одна: detached git worktree на временный коммит с рабочим деревом

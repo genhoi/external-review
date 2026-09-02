@@ -12,7 +12,7 @@
 | kimi-cli | kimi-code/k3, effort high | ✓ critical | ✓ major | ✓ major | ✓ major | не тронул | `is_active` нигде не вызывается (info, read) — верно | все `ran` | 15 | 6м07с | подписка |
 | grok | grok-4.6, xhigh | ✓ critical | ✓ critical | свернул в улику к A | ✓ major | не тронул | — | все `ran` | 33 | 8м17с | $0.09 |
 | kimi | k3[1m] через Claude Code, effort max | ✓ critical | ✓ major | ✓ major | ✓ major | не тронул | — (отдельно проверил совместимость смены формата ключа дедупликации и отсутствие вызывающих мест) | все `ran` | 19 | 10м05с | $0.84 |
-| codex | по умолчанию из config, xhigh | ✓ critical | ✓ major | свернул в A | ✓ critical | не тронул | гонка check-then-act как **critical/95 `ran`** — спорно (glm не воспроизвёл) | все `ran` | 24 | 9м17с | подписка |
+| codex | gpt-5.6-sol (из config), xhigh | ✓ critical | ✓ major | свернул в A | ✓ critical | не тронул | гонка check-then-act как **critical/95 `ran`** — спорно (glm не воспроизвёл) | все `ran` | 24 | 9м17с | подписка |
 
 Сводка `review collect`: пять из пяти сошлись на A, B, D; трое отдельно вынесли C; расхождение
 по гонке (codex critical vs glm inferred 55) — типичный кейс для `review ask`.
