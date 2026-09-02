@@ -30,6 +30,8 @@ codex — `workspace-write`. Симлинки `vendor`, `node_modules`, `.venv`,
 - `--output-format stream-json --verbose`: прогресс виден по ходу; финальный текст — в событии
   `result`, там же `session_id`, `num_turns`, `total_cost_usd`, `duration_ms`. Если `result`
   пуст — берём последний текст ассистента, затем `REVIEW.md` из снапшота.
+- `review ask` для claude-семейства = `claude -p --resume <uuid>` в том же снапшоте и окружении: рецензент
+  видит свою сессию, может дозапустить проверки и обновить `REVIEW.md` (проверено на glm 02.09.2026, ответ ~1 мин).
 - glm и kimi запускаются с отдельным `CLAUDE_CONFIG_DIR` (`~/.local/state/external-review/cfg/<имя>`):
   пользовательские настройки, плагины и хуки не грузятся, сессии рецензентов лежат отдельно.
 - opus использует обычный `~/.claude` (OAuth), но с `--setting-sources project,local`, чтобы не
