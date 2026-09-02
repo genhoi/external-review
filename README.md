@@ -87,7 +87,39 @@ Models are not hard-coded into the scripts: `review config set CODEX_MODEL gpt-5
 
 ## What a report looks like
 
-<!-- REPORT-EXCERPT -->
+An excerpt from GLM-5.3's report on the test fixture (`tests/make-fixture.sh`, English protocol, 4m35s, 25 tool calls). Every finding was reproduced by running code in the snapshot:
+
+```markdown
+## Summary
+Intent as understood: (1) deduplicate PayGate webhook redeliveries, (2) add an `is_active` subscription check, (3) validate discount percent in `apply_discount` — while first-delivery charging behavior stays unchanged. Verdict: **not ready**. The headline feature does not work against the provider's own documented redelivery semantics (docs/provider.md: the event `id` is regenerated on redelivery; only `payment_id` stays stable), so a redelivery is credited twice. Top 3 must-fix:
+
+1. webhooks.py dedupes on the field the provider regenerates → double credit (critical).
+2. `is_active` compares naive-UTC `expires_at` to naive *local* `now` → subscriptions expire 5 h early on Asia/Almaty servers.
+3. The new webhook test asserts `processed_count >= 1`, green on the double-credit path — false coverage.
+
+## Findings
+
+### 1. [critical] [confidence 99] billing/webhooks.py:13 — dedupe key uses `event["id"]`, which the provider regenerates on every redelivery
+- What breaks: docs/provider.md:4-5 states delivery is at-least-once and *"При повторной доставке провайдер генерирует НОВЫЙ `id` события, стабильным остаётся только `payment_id` (и `type`)"*. The new key `f"{event['type']}:{event['id']}"` therefore never matches on a real redelivery — the event is applied again and the payment credited twice.
+- Evidence (ran): two events with different `id`, same `payment_id` (the exact contract scenario):
+  ```
+  H1 first: True second(new id, same payment): True
+  H1 payments[pay_1] = 200.00  processed_count = 2
+  ```
+- Impact: money — a 100.00 payment is booked as 200.00; accounting reconciles to the cent, so every redelivered success within the 24 h window corrupts the ledger. This is precisely the failure the branch claims to fix.
+- Fix: `dedupe_key = f"{event['type']}:{event['payment_id']}"` (webhooks.py:13, 17).
+- How to verify the fix: I applied it in the snapshot — repro credits once (`payments[pay_1] = 100.00, processed_count = 1`) and the full suite still passes 11/11, i.e. first-delivery behavior is unchanged.
+
+…
+
+## Verification log
+| Hypothesis | How checked | Result |
+|---|---|---|
+| Redelivery (new `id`, stable `payment_id`) credited twice | ran repro per docs/provider.md | confirmed |
+| `is_active` skewed by server TZ Asia/Almaty | ran repro with `TZ=Asia/Almaty` | confirmed |
+| `is_active(sub, utc_now())` raises TypeError | ran repro | confirmed |
+…
+```
 
 ## Works from any orchestrator
 

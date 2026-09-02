@@ -139,7 +139,8 @@ cmd_run() {
 
   local root name run snap_commit
   root="$(proj_root)"; name="$(basename "$root")"
-  run="$ER_RUNS/$name-$(date +%Y%m%d-%H%M%S)"; mkdir -p "$run"
+  mkdir -p "$ER_RUNS"
+  run="$(mktemp -d "$ER_RUNS/$name-$(date +%Y%m%d-%H%M%S)-XXXX")"   # suffix: two runs in the same second must not collide
   echo "$root" > "$run/project_root"; echo "$timeout" > "$run/timeout"; echo "$lang" > "$run/lang"
   printf '%s\n' $links $extra_links > "$run/links"
 

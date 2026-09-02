@@ -38,3 +38,10 @@ could not run anything.
 |---|---|---|
 | Claude (fresh subagent) | Agent tool, SKILL.md only | doctor → full brief → run → wait → collect → triage with its own reproduction of every finding; 22 calls, 14 min; nothing rejected, did not raise the decoy |
 | GLM-5.3 headless | `claude -p` via z.ai, regular `~/.claude` | first attempt: `wait` killed by the Bash tool's 2-minute timeout, GLM ended the session with an "interim status" → fixed (`wait` returns within ≤110 s, exit 3). Second attempt: `wait` in a loop 8 times, triage.md, merged.md, repro check in the snapshot; 43 calls, 15 min, full verdict table |
+
+## 2026-09-02 — English protocol (`--lang en`, brief `fixture-brief.en.md`)
+
+| Reviewer | A | B | C | D | Decoy | Evidence | Tool calls | Time | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| glm | ✓ critical | ✓ major | ✓ major | ✓ major | not flagged | all `ran` | 25 | 4m35s | + TypeError on aware `now` (minor); English section headings and JSON block parsed by `collect` |
+| grok | ✓ critical | ✓ major | folded into A | ✓ major | not flagged | all `ran` | 35 | 7m11s | same shape as the Russian run |
