@@ -26,7 +26,7 @@ fi
 : "${GROK_MODEL:=grok-4.6}"
 : "${CODEX_MODEL:=gpt-5.6-sol}"
 # --- effort (claude family: `review run --effort`, default max) ---
-: "${GROK_EFFORT:=xhigh}";          : "${CODEX_EFFORT:=xhigh}"
+: "${GROK_EFFORT:=xhigh}";          : "${CODEX_EFFORT:=ultra}"
 # --- endpoints ---
 : "${ZAI_BASE_URL:=https://api.z.ai/api/anthropic}"
 : "${KIMI_BASE_URL:=https://api.kimi.com/coding/}"

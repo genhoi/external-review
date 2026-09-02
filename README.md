@@ -84,7 +84,7 @@ against the code. Inside Claude Code the skill triggers on "get a second opinion
 | `kimi` | Claude Code → api.kimi.com, `k3[1m]`, effort max | Kimi Code subscription key |
 | `opus` | Claude Code, `opus`, effort max | Claude subscription |
 | `grok` | grok CLI, `grok-4.6`, effort xhigh, kernel sandbox | xAI subscription |
-| `codex` | codex CLI, `codex exec`, `gpt-5.6-sol`, effort xhigh, sandbox workspace-write | ChatGPT subscription |
+| `codex` | codex CLI, `codex exec`, `gpt-5.6-sol`, effort ultra, sandbox workspace-write | ChatGPT subscription |
 | `kimi-cli` | kimi-code CLI (OAuth) | fallback path |
 
 Models are not hard-coded into the scripts: `review config set CODEX_MODEL gpt-5.7-sol` writes

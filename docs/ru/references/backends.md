@@ -9,7 +9,7 @@
 | kimi | `claude -p` → api.kimi.com/coding | `k3[1m]` (`KIMI_MODEL`) | `--effort max` (= K3 max) | stream-json | как glm |
 | opus | `claude -p`, подписка Claude | `opus` (`OPUS_MODEL`) | `--effort max` | stream-json | как glm |
 | grok | `grok --prompt-file` | `grok-4.6` (`GROK_MODEL`) | `--effort xhigh` (максимум) | streaming-messages-json = формат claude stream-json | `-s` наш uuid → `--resume` |
-| codex | `codex exec` | `gpt-5.6-sol` (`CODEX_MODEL`) | `-c model_reasoning_effort="xhigh"` | `--json` JSONL + `-o` последнее сообщение | `thread_id` из события `thread.started` → `codex exec resume` |
+| codex | `codex exec` | `gpt-5.6-sol` (`CODEX_MODEL`) | `-c model_reasoning_effort="ultra"` | `--json` JSONL + `-o` последнее сообщение | `thread_id` из события `thread.started` → `codex exec resume` |
 | kimi-cli | `kimi -p` (OAuth) | `kimi-code/k3` (`KIMI_CLI_MODEL`) | из config.toml (`effort = "high"|"max"`) | stream-json (строки без `type`) | `session_id` из `session.resume_hint` → `-S` |
 
 Модели и effort по умолчанию — в `bin/lib/defaults.sh`; переопределение — `review config set KEY VALUE`
@@ -73,7 +73,11 @@ codex — `workspace-write`. Симлинки `vendor`, `node_modules`, `.venv`,
 - `--json` — JSONL событий (`thread.started`, `item.completed` с `agent_message` /
   `command_execution` / `file_change`, `turn.completed`); `-o FILE` — последнее сообщение
   агента целиком. Отчёт берём из `-o`, прогресс из JSONL.
-- Effort: `-c model_reasoning_effort="xhigh"` (значения minimal…xhigh).
+- Effort: `-c model_reasoning_effort="ultra"` (`CODEX_EFFORT`). Лестница зависит от модели —
+  смотреть в `~/.codex/models_cache.json` (`supported_reasoning_levels`). У `gpt-5.6-sol` и
+  `gpt-5.6-terra`: low, medium, high, xhigh, max, **ultra** («максимум рассуждений плюс
+  автоматическое делегирование подзадач»); у моделей постарше потолок `xhigh` (02.09.2026).
+  Неподдерживаемое значение роняет прогон — при смене `CODEX_MODEL` понижай `CODEX_EFFORT`.
 - Логин: `codex login` (браузер) или `codex login --device-auth`; `codex login status` — проверка.
 - `codex exec review --uncommitted|--base REF|--commit SHA` — встроенное ревью с собственным
   промптом; для единообразия отчётов используем обычный `exec` с нашим протоколом.

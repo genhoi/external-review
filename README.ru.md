@@ -85,7 +85,7 @@ $R collect                       # merged.md: таблица находок × �
 | `kimi` | Claude Code → api.kimi.com, `k3[1m]`, effort max | ключ подписки Kimi Code |
 | `opus` | Claude Code, `opus`, effort max | подписка Claude |
 | `grok` | grok CLI, `grok-4.6`, effort xhigh, kernel-sandbox | подписка xAI |
-| `codex` | codex CLI, `codex exec`, `gpt-5.6-sol`, effort xhigh, sandbox workspace-write | подписка ChatGPT |
+| `codex` | codex CLI, `codex exec`, `gpt-5.6-sol`, effort ultra, sandbox workspace-write | подписка ChatGPT |
 | `kimi-cli` | kimi-code CLI (OAuth) | запасной путь |
 
 Модели не зашиты в скрипты: `review config set CODEX_MODEL gpt-5.7-sol` пишет

@@ -65,7 +65,8 @@ z.ai и Kimi — их доки по Claude Code (суффикс `[1m]` толь�
 | `EXTERNAL_REVIEW_HOME` | `~/.local/state/external-review` | прогоны, снапшоты, config dir'ы |
 | `EXTERNAL_REVIEW_TIMEOUT` | `2700` | секунд на рецензента |
 | `GLM_MODEL` / `KIMI_MODEL` / `OPUS_MODEL` / `GROK_MODEL` / `CODEX_MODEL` / `KIMI_CLI_MODEL` | `review config` | модель рецензента (лучше через `review config set`) |
-| `GROK_EFFORT` / `CODEX_EFFORT` | `xhigh` | effort |
+| `GROK_EFFORT` | `xhigh` | effort grok (максимум) |
+| `CODEX_EFFORT` | `ultra` | effort codex; `ultra`/`max` есть только у `gpt-5.6-sol`/`-terra`, у моделей постарше потолок `xhigh` |
 | `GROK_SANDBOX` | `workspace` при наличии bwrap, иначе `off` | профиль sandbox grok |
 | `CODEX_NO_SANDBOX` | — | `1` → без sandbox codex (если не стартует в этом окружении) |
 | `ZAI_BASE_URL` / `KIMI_BASE_URL` | z.ai / api.kimi.com | эндпоинты |

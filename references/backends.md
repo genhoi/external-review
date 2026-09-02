@@ -9,7 +9,7 @@ Everything below has been verified on real runs; the date is in parentheses. Bef
 | kimi | `claude -p` → api.kimi.com/coding | `k3[1m]` (`KIMI_MODEL`) | `--effort max` (= K3 max) | stream-json | same as glm |
 | opus | `claude -p`, Claude subscription | `opus` (`OPUS_MODEL`) | `--effort max` | stream-json | same as glm |
 | grok | `grok --prompt-file` | `grok-4.6` (`GROK_MODEL`) | `--effort xhigh` (maximum) | streaming-messages-json = claude stream-json format | `-s` our uuid → `--resume` |
-| codex | `codex exec` | `gpt-5.6-sol` (`CODEX_MODEL`) | `-c model_reasoning_effort="xhigh"` | `--json` JSONL + `-o` last message | `thread_id` from the `thread.started` event → `codex exec resume` |
+| codex | `codex exec` | `gpt-5.6-sol` (`CODEX_MODEL`) | `-c model_reasoning_effort="ultra"` | `--json` JSONL + `-o` last message | `thread_id` from the `thread.started` event → `codex exec resume` |
 | kimi-cli | `kimi -p` (OAuth) | `kimi-code/k3` (`KIMI_CLI_MODEL`) | from config.toml (`effort = "high"|"max"`) | stream-json (lines without `type`) | `session_id` from `session.resume_hint` → `-S` |
 
 Default models and effort live in `bin/lib/defaults.sh`; override with `review config set KEY VALUE`
@@ -73,7 +73,11 @@ original tree: the reviewer is instructed not to modify them.
 - `--json` — JSONL of events (`thread.started`, `item.completed` with `agent_message` /
   `command_execution` / `file_change`, `turn.completed`); `-o FILE` — the agent's last message
   in full. The report is taken from `-o`, progress from the JSONL.
-- Effort: `-c model_reasoning_effort="xhigh"` (values minimal…xhigh).
+- Effort: `-c model_reasoning_effort="ultra"` (`CODEX_EFFORT`). The ladder is model-dependent —
+  read it from `~/.codex/models_cache.json` (`supported_reasoning_levels`). `gpt-5.6-sol` and
+  `gpt-5.6-terra`: low, medium, high, xhigh, max, **ultra** ("maximum reasoning with automatic
+  task delegation"); older models stop at `xhigh` (2026-09-02). An unsupported value makes the
+  run fail — lower `CODEX_EFFORT` when you switch `CODEX_MODEL`.
 - Login: `codex login` (browser) or `codex login --device-auth`; `codex login status` — check.
 - `codex exec review --uncommitted|--base REF|--commit SHA` — built-in review with its own
   prompt; for uniform reports we use plain `exec` with our protocol.
