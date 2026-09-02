@@ -58,6 +58,7 @@ model does not hallucinate and follows the protocol.
 
 | Variable | Default | Purpose |
 |---|---|---|
+| `REVIEW_DEPS` | `copy` | how ignored dependencies get into the snapshot: `copy` (safe, docker-friendly), `hardlink` (instant; an in-place edit changes the original), `symlink` (dangling inside containers), `none` |
 | `REVIEW_LANG` | `en` | language of the protocol and reports: `en` or `ru` (`review config set REVIEW_LANG ru`) |
 | `EXTERNAL_REVIEW_HOME` | `~/.local/state/external-review` | runs, snapshots, config dirs |
 | `EXTERNAL_REVIEW_TIMEOUT` | `2700` | seconds per reviewer |

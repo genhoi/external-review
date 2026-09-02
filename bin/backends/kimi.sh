@@ -15,3 +15,5 @@ backend_env() {
 }
 backend_check() { backend_env >/dev/null 2>&1 || { echo "missing Kimi Code key: KIMI_API_KEY or ~/.claude/kimi_api_key (kimi.com/code/console)"; exit 1; }; echo "ok — $KIMI_MODEL via api.kimi.com"; }
 claude_dispatch "$@"
+
+exit $?

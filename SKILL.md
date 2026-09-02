@@ -25,8 +25,8 @@ only a shell, git and python3. Below, `R=~/.claude/skills/external-review/bin/re
 |---|---|
 | `$R doctor` | which reviewers are available and what is missing |
 | `$R config [set KEY VALUE]` | effective models, effort and language; change them without editing the skill |
-| `$R brief --out brief.md` | brief template (language from `REVIEW_LANG`, or `--lang en\|ru`) |
-| `$R run --brief brief.md [--mode diff\|repo\|plan] [--base REF] [--reviewers auto\|glm,grok,...] [--lang en\|ru] [--lens correctness\|security\|ops\|tests] [--blind] [--plan FILE]` | snapshot + reviewers in the background; prints the run directory |
+| `$R brief --out brief.md` | brief template + the project profile, if the repo has a `## External review` section in `AGENTS.md`/`CLAUDE.md` |
+| `$R run --brief brief.md [--mode diff\|repo\|plan] [--base REF] [--reviewers auto\|glm,grok,...] [--lang en\|ru] [--deps copy\|hardlink\|symlink\|none] [--lens correctness\|security\|ops\|tests] [--blind] [--plan FILE]` | snapshot + reviewers in the background; prints the run directory |
 | `$R status RUN` / `$R wait RUN` | progress / waiting: `wait` returns within 110 s (exit 3 = still running, call again; exit 0 = all done) |
 | `$R collect RUN` | `merged.md`: findings table × reviewer + full reports |
 | `$R ask RUN glm "counter-evidence"` | continue a reviewer's session |
@@ -37,10 +37,10 @@ Flag details: `$R --help`. Per-CLI quirks: `references/backends.md`.
 ## Workflow
 
 1. **`$R doctor`.** Missing keys and logins are described in `references/setup.md`; tell the user what is missing, but do not block: launch whoever is available.
-2. **Brief.** `$R brief --out /tmp/brief-<project>.md`, fill in every section of the template. Mandatory: the intent of the change, the cost of failure, **exact commands for tests and static analysis and what is unavailable in the environment**, non-obvious properties of the stack, what not to review, known decisions. Do not paste code or the diff: the reviewer reads them itself.
-3. **Launch.** From the repository root: `$R run --brief /tmp/brief-<project>.md`. Default mode is `diff` against the merge-base with main/master; the snapshot includes uncommitted changes. Save the run path printed to stdout.
+2. **Brief.** `$R brief --out /tmp/brief-<project>.md`, fill in every section of the template. If the repository has a `## External review` section in `AGENTS.md` or `CLAUDE.md` (the project profile: how to run tests in a snapshot, what the stand lacks, known decisions), it is appended automatically — write only the per-run sections. Mandatory: the intent of the change, the cost of failure, **exact commands for tests and static analysis and what is unavailable in the environment**, non-obvious properties of the stack, what not to review, known decisions. Do not paste code or the diff: the reviewer reads them itself.
+3. **Launch.** From the repository root: `$R run --brief /tmp/brief-<project>.md`. Default mode is `diff` against the merge-base with main/master; the snapshot includes uncommitted changes, and ignored dependencies (`vendor`, `node_modules`, `.venv`, `.env*`) are **copied** into it (`--deps` to change), so tests run inside the snapshot even from a docker bind mount. Save the run path printed to stdout.
 4. **While they work** (5–40 minutes depending on size) — do your own work (for example, run the tests yourself and check a couple of hypotheses) and look at `$R status RUN` now and then. When your own work is done, call `$R wait RUN` **in a loop** until it prints "all reviewers finished" (exit 0): each call returns within about two minutes so it does not hit the tool timeout. In headless mode nobody comes back to the task for you: never end your answer with an "interim status".
-5. **`$R collect RUN`** and read `merged.md` in full: the table and the full reports, including the "Checked, fine" and "Could not verify" sections.
+5. **`$R collect RUN`** and read `merged.md` in full (a reviewer whose wrapper died but left a report counts as `done(exit died)`; tokens and cost per reviewer are in the header table): the table and the full reports, including the "Checked, fine" and "Could not verify" sections.
 6. **Triage** per `references/triage.md`: a verdict "accept / reject" for every finding, verified against the real code; findings shared by two or more reviewers first; disputed ones — `$R ask`.
 7. **Summary for the user**: what was found, what you accept and why, what you reject and why, what you are fixing. Then the fixes, **the full test and lint run**, `$R clean RUN`.
 
@@ -75,7 +75,7 @@ Flag details: `$R --help`. Per-CLI quirks: `references/backends.md`.
 
 ## Files
 
-- `bin/review` — CLI; `bin/backends/*.sh` — one per reviewer; `bin/lib/` — snapshot, background launch, output parsing, defaults.
+- `bin/review` — CLI; `bin/backends/*.sh` — one per reviewer (`fake` is a stub for CI and dry runs); `bin/lib/` — snapshot, background launch, output parsing, defaults.
 - `prompts/<lang>/reviewer.md` — the review protocol (shared by all reviewers); `prompts/<lang>/brief.md` — brief template; `prompts/<lang>/lenses/` — lenses. Languages: `en`, `ru`.
 - `references/backends.md` — verified flags and quirks of every CLI, with dates; `references/triage.md` — how to triage the reports; `references/setup.md` — keys, logins, installation, model overrides.
 - `bin/bundle.py` — a single HTTP request without an agent (a plan or a diff without a repository).

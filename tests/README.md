@@ -24,3 +24,8 @@ whether there is a JSON block at the end (otherwise the merged report will not a
 
 Results from 2026-09-02 (new protocol; record new runs here when models change):
 see `results.md`.
+
+
+## Without API keys
+
+`tests/ci.sh` runs the whole suite locally in ~15 s: syntax and shellcheck, unit tests for `bin/lib/extract.py` on the recorded samples in `tests/samples/`, the fixture build, and an end-to-end run with the stub reviewer (`--reviewers fake`) covering snapshot, copied dependencies, project profile, `--blind`, `--lang ru`, plan mode, dead-wrapper reaping, same-second run dirs and `clean`. GitHub Actions runs the same script.

@@ -15,6 +15,7 @@ them against the real code.
   <img alt="requires bash, git, python3" src="https://img.shields.io/badge/requires-bash%20%C2%B7%20git%20%C2%B7%20python3-1b2a41?style=flat-square">
   <img alt="Claude Code skill" src="https://img.shields.io/badge/Claude%20Code-skill-e5674f?style=flat-square">
   <img alt="reviewers" src="https://img.shields.io/badge/reviewers-GLM%20%C2%B7%20Kimi%20%C2%B7%20Grok%20%C2%B7%20Codex%20%C2%B7%20Opus-1b2a41?style=flat-square">
+  <a href="https://github.com/genhoi/external-review/actions/workflows/ci.yml"><img alt="ci" src="https://github.com/genhoi/external-review/actions/workflows/ci.yml/badge.svg"></a>
   <a href="README.ru.md"><img alt="Русская версия" src="https://img.shields.io/badge/docs-%D0%A0%D1%83%D1%81%D1%81%D0%BA%D0%B8%D0%B9-5c6b7c?style=flat-square"></a>
 </p>
 
@@ -56,8 +57,9 @@ against the code. Inside Claude Code the skill triggers on "get a second opinion
 
 1. **Snapshot.** `review run` commits your working tree (uncommitted and untracked files included) to a
    temporary commit and checks it out as a detached worktree per reviewer. `vendor`, `node_modules`,
-   `.venv`, `.env*` are symlinked in. The reviewer can run and modify anything there; your tree is
-   never touched. Guardrails where the CLI supports them: deny rules for the Claude family, kernel
+   `.venv`, `.env*` are copied in (`--deps hardlink|symlink|none` to change), so tests run inside the
+   snapshot even when they go through a docker bind mount. The reviewer can run and modify anything
+   there; your tree is never touched. Guardrails where the CLI supports them: deny rules for the Claude family, kernel
    sandbox for Grok and Codex.
 2. **One protocol for everyone** ([`prompts/en/reviewer.md`](prompts/en/reviewer.md)): orientation →
    hypotheses specific to this change → verification by execution → report. Every finding is tagged
@@ -65,7 +67,9 @@ against the code. Inside Claude Code the skill triggers on "get a second opinion
    "Could not verify" section, a verification log and a machine-readable block.
 3. **The brief is the main input** ([`prompts/en/brief.md`](prompts/en/brief.md)): intent, cost of
    failure, exact test commands and what is unavailable, non-obvious stack properties, known decisions.
-   `--blind` hides the intent from the reviewer to catch what the brief unintentionally justifies.
+   The stable part lives in your repository: a `## External review` section in `AGENTS.md` or
+   `CLAUDE.md` is appended to every brief automatically. `--blind` hides the intent from the reviewer
+   to catch what the brief unintentionally justifies.
 4. **Merge.** `review collect` groups findings by file and line; those flagged by several reviewers
    come first. `review ask RUN glm "..."` resumes a reviewer's session with counter-evidence.
 5. **Triage** stays with you: accept or reject each finding after checking the code, fix, rerun the
@@ -155,13 +159,25 @@ Precedence: environment variable → `~/.config/external-review/config.env` → 
 | [`tests/README.md`](tests/README.md) | a fixture with planted defects to check a new reviewer or model |
 | [`docs/ru/`](docs/ru/) | Russian copies of the skill and references |
 
+## Project profile
+
+Put the part of the brief that never changes into the repository, and `review brief` picks it up:
+
+```markdown
+## External review
+- Tests: `docker compose run --rm -v $PWD:/app app vendor/bin/phpunit` (mount the snapshot, not the main checkout)
+- Not available on the stand: the payment provider sandbox, the read replica
+- Known decisions: the outbox table is polled, not LISTEN/NOTIFY — by design
+```
+
 ## Tested on a fixture
 
 [`tests/make-fixture.sh`](tests/make-fixture.sh) builds a small billing service with four planted
 defects a linter cannot see (a dedupe key that breaks on provider retries, a UTC/local time mix, a
 vacuous test, banker's rounding against a documented half-up rule) and one decoy. All six reviewers
 found the defects with `ran` evidence and none flagged the decoy. Timings, tool-call counts and the
-odd disagreements are in [`tests/results.md`](tests/results.md).
+odd disagreements are in [`tests/results.md`](tests/results.md). `tests/ci.sh` runs the same fixture
+end-to-end with a stub reviewer — no API keys — and is what GitHub Actions executes.
 
 ## Layout
 

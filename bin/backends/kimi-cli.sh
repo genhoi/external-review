@@ -4,12 +4,12 @@ source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 KIMI_BIN="${KIMI_BIN:-$HOME/.kimi-code/bin/kimi}"; command -v kimi >/dev/null && KIMI_BIN="${KIMI_BIN:-kimi}"
 case "$1" in
   run)
-    cd "$ER_SNAPSHOT"
+    cd "$ER_SNAPSHOT" || exit 1
     exec "$KIMI_BIN" -p "$(cat "$ER_PROMPT")" --output-format stream-json -m "$KIMI_CLI_MODEL" ;;
   ask)
     sid="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("session_id") or "")' "$ER_DIR/meta.json")"
     [ -n "$sid" ] || die "kimi-cli: session id not found in meta.json"
-    cd "$ER_SNAPSHOT"
+    cd "$ER_SNAPSHOT" || exit 1
     exec "$KIMI_BIN" -S "$sid" -p "$2" --output-format text ;;
   format) echo kimi-stream-json ;;
   check)
@@ -18,3 +18,5 @@ case "$1" in
     echo "ok — $KIMI_CLI_MODEL (OAuth)" ;;
   *) die "kimi-cli backend: unknown command $1" ;;
 esac
+
+exit 0

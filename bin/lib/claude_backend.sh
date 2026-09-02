@@ -15,7 +15,7 @@ claude_common_args() {
 claude_run() {
   backend_env || exit 1
   local sid; sid="$(cat "$ER_DIR/session")"
-  cd "$ER_SNAPSHOT"
+  cd "$ER_SNAPSHOT" || exit 1
   mapfile -t args < <(claude_common_args "$sid")
   exec "$CLAUDE_BIN" "${args[@]}" ${CLAUDE_EXTRA_ARGS:-} < "$ER_PROMPT"
 }
@@ -23,7 +23,7 @@ claude_run() {
 claude_ask() { # claude_ask "message"
   backend_env || exit 1
   local sid; sid="$(cat "$ER_DIR/session")"
-  cd "$ER_SNAPSHOT"
+  cd "$ER_SNAPSHOT" || exit 1
   exec "$CLAUDE_BIN" -p --resume "$sid" --output-format text \
     --permission-mode bypassPermissions --effort "${ER_EFFORT:-max}" \
     --settings "$(claude_deny_settings "$ER_PROJ_ROOT")" ${CLAUDE_EXTRA_ARGS:-} "$1"

@@ -25,3 +25,5 @@ case "$1" in
     echo "ok — $GROK_MODEL, effort $GROK_EFFORT" ;;
   *) die "grok backend: unknown command $1" ;;
 esac
+
+exit 0

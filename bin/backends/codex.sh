@@ -24,3 +24,5 @@ case "$1" in
     echo "ok — $CODEX_MODEL, effort $CODEX_EFFORT" ;;
   *) die "codex backend: unknown command $1" ;;
 esac
+
+exit 0

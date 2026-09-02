@@ -15,6 +15,7 @@ Claude Opus) запускаются как автономные агенты в 
   <img alt="нужны bash, git, python3" src="https://img.shields.io/badge/requires-bash%20%C2%B7%20git%20%C2%B7%20python3-1b2a41?style=flat-square">
   <img alt="Claude Code skill" src="https://img.shields.io/badge/Claude%20Code-skill-e5674f?style=flat-square">
   <img alt="рецензенты" src="https://img.shields.io/badge/reviewers-GLM%20%C2%B7%20Kimi%20%C2%B7%20Grok%20%C2%B7%20Codex%20%C2%B7%20Opus-1b2a41?style=flat-square">
+  <a href="https://github.com/genhoi/external-review/actions/workflows/ci.yml"><img alt="ci" src="https://github.com/genhoi/external-review/actions/workflows/ci.yml/badge.svg"></a>
   <a href="README.md"><img alt="English" src="https://img.shields.io/badge/docs-English-5c6b7c?style=flat-square"></a>
 </p>
 
@@ -57,16 +58,19 @@ $R collect                       # merged.md: таблица находок × �
 
 1. **Снапшот.** `review run` делает временный коммит рабочего дерева (включая незакоммиченное и
    untracked) и разворачивает detached worktree на каждого рецензента. `vendor`, `node_modules`,
-   `.venv`, `.env*` — симлинками. Рецензент может запускать и менять что угодно, ваше дерево не
-   трогается. Гардрейлы там, где CLI умеет: deny-правила для claude-семейства, kernel-sandbox у
+   `.venv`, `.env*` копируются внутрь (`--deps hardlink|symlink|none` меняет режим), поэтому тесты
+   идут в снапшоте даже через docker bind-mount. Рецензент может запускать и менять что угодно, ваше
+   дерево не трогается. Гардрейлы там, где CLI умеет: deny-правила для claude-семейства, kernel-sandbox у
    Grok и Codex.
 2. **Один протокол для всех** ([`prompts/ru/reviewer.md`](prompts/ru/reviewer.md)): ориентация →
    гипотезы под это изменение → проверка исполнением → отчёт. Каждая находка помечена
    `ran | read | inferred` и confidence; в конце разделы «проверено, в порядке», «не удалось
    проверить», журнал проверки и машинный блок.
 3. **Вводная — главный вход** ([`prompts/ru/brief.md`](prompts/ru/brief.md)): интент, цена ошибки,
-   точные команды тестов и что недоступно, неочевидные свойства стека, известные решения. `--blind`
-   прячет интент от рецензента, чтобы поймать то, что вводная невольно оправдывает.
+   точные команды тестов и что недоступно, неочевидные свойства стека, известные решения. Стабильная
+   часть живёт в репозитории: секция `## External review` в `AGENTS.md` или `CLAUDE.md` подмешивается
+   в каждую вводную автоматически. `--blind` прячет интент от рецензента, чтобы поймать то, что
+   вводная невольно оправдывает.
 4. **Сводка.** `review collect` группирует находки по файлу и строке, совпавшие у нескольких
    рецензентов — первыми. `review ask RUN glm "..."` продолжает сессию рецензента с контраргументом.
 5. **Триаж** остаётся за вами: принять или отклонить каждую находку после проверки по коду,
@@ -149,6 +153,18 @@ CODEX_MODEL=gpt-5.7-sol review run ... # на один запуск
 | [`references/triage.md`](references/triage.md) · [рус.](docs/ru/references/triage.md) | как превратить N отчётов в принятые правки |
 | [`tests/README.md`](tests/README.md) · [рус.](docs/ru/tests-README.md) | фикстур с заложенными дефектами для проверки рецензента или модели |
 
+## Профиль проекта
+
+То, что во вводной не меняется от прогона к прогону, кладётся в репозиторий, и `review brief` это
+подхватывает:
+
+```markdown
+## External review
+- Тесты: `docker compose run --rm -v $PWD:/app app vendor/bin/phpunit` (монтировать снапшот, а не основной checkout)
+- Нет на стенде: песочница платёжного провайдера, read-реплика
+- Известные решения: outbox опрашивается поллингом, не LISTEN/NOTIFY — так задумано
+```
+
 ## Проверено на фикстуре
 
 [`tests/make-fixture.sh`](tests/make-fixture.sh) собирает мини-сервис биллинга с четырьмя заложенными
@@ -156,7 +172,8 @@ CODEX_MODEL=gpt-5.7-sol review run ... # на один запуск
 UTC и локального времени, пустой тест, банковское округление вместо задокументированного half-up), и
 одной приманкой. Все шесть рецензентов нашли дефекты с `ran`-уликами, приманку не тронул никто.
 Тайминги, число вызовов инструментов и расхождения — в [`tests/results.md`](tests/results.md)
-([рус.](docs/ru/tests-results.md)).
+([рус.](docs/ru/tests-results.md)). `tests/ci.sh` гоняет тот же фикстур сквозным прогоном со
+stub-рецензентом без ключей — это и выполняет GitHub Actions.
 
 ## Структура
 

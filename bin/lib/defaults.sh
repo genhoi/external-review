@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034  # variables here are used by the scripts that source this file
 # The single place for model/effort/language defaults. Precedence: environment variable →
 # ~/.config/external-review/config.env (KEY=VALUE, applied only to unset keys) → values below.
 # Inspect/change: `review config`, `review config set CODEX_MODEL gpt-5.7-sol`.
@@ -16,6 +17,8 @@ fi
 
 # --- language of prompts and reviewer reports: en | ru ---
 : "${REVIEW_LANG:=en}"
+# --- how ignored dependencies (vendor, node_modules, .venv, .env*) get into the snapshot: copy | hardlink | symlink | none ---
+: "${REVIEW_DEPS:=copy}"
 # --- models ---
 : "${GLM_MODEL:=glm-5.3[1m]}";      : "${GLM_SMALL_MODEL:=glm-5.3-flash}"
 : "${KIMI_MODEL:=k3[1m]}";          : "${KIMI_CLI_MODEL:=kimi-code/k3}"
@@ -27,6 +30,6 @@ fi
 # --- endpoints ---
 : "${ZAI_BASE_URL:=https://api.z.ai/api/anthropic}"
 : "${KIMI_BASE_URL:=https://api.kimi.com/coding/}"
-export REVIEW_LANG GLM_MODEL GLM_SMALL_MODEL KIMI_MODEL KIMI_CLI_MODEL OPUS_MODEL GROK_MODEL CODEX_MODEL GROK_EFFORT CODEX_EFFORT ZAI_BASE_URL KIMI_BASE_URL
+export REVIEW_LANG REVIEW_DEPS GLM_MODEL GLM_SMALL_MODEL KIMI_MODEL KIMI_CLI_MODEL OPUS_MODEL GROK_MODEL CODEX_MODEL GROK_EFFORT CODEX_EFFORT ZAI_BASE_URL KIMI_BASE_URL
 
-ER_CONFIG_KEYS="REVIEW_LANG GLM_MODEL GLM_SMALL_MODEL KIMI_MODEL KIMI_CLI_MODEL OPUS_MODEL GROK_MODEL CODEX_MODEL GROK_EFFORT CODEX_EFFORT ZAI_BASE_URL KIMI_BASE_URL"
+ER_CONFIG_KEYS="REVIEW_LANG REVIEW_DEPS GLM_MODEL GLM_SMALL_MODEL KIMI_MODEL KIMI_CLI_MODEL OPUS_MODEL GROK_MODEL CODEX_MODEL GROK_EFFORT CODEX_EFFORT ZAI_BASE_URL KIMI_BASE_URL"

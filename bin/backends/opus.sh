@@ -11,3 +11,5 @@ backend_check() {
   echo "ok — $OPUS_MODEL via Claude subscription"
 }
 claude_dispatch "$@"
+
+exit $?

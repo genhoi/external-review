@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034  # variables here are used by the scripts that source this file
 # Shared functions for bin/review and the backends. Loaded via `source`.
 
 ER_SKILL_DIR="${ER_SKILL_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
@@ -51,7 +52,7 @@ status_of() { cat "$1/$2/status" 2>/dev/null || echo "unknown"; }
 snapshot_commit() { # snapshot_commit PROJ_ROOT
   local root="$1" idx tree head
   head="$(git -C "$root" rev-parse HEAD)"
-  idx="$(mktemp)"
+  idx="$(mktemp)"; rm -f "$idx"   # git >= 2.43 rejects an existing empty index file
   cp "$root/.git/index" "$idx" 2>/dev/null || true
   GIT_INDEX_FILE="$idx" git -C "$root" add -A >/dev/null 2>&1
   tree="$(GIT_INDEX_FILE="$idx" git -C "$root" write-tree)"
@@ -63,18 +64,35 @@ snapshot_commit() { # snapshot_commit PROJ_ROOT
   fi
 }
 
-# Detached worktree at the snapshot commit + symlinks to ignored dependencies.
-make_worktree() { # make_worktree PROJ_ROOT COMMIT DEST LINKS...
-  local root="$1" commit="$2" dest="$3"; shift 3
+# Detached worktree at the snapshot commit + ignored dependencies brought in per MODE:
+#   copy     — cp -a (default): a real directory, safe to modify, works with docker bind mounts;
+#   hardlink — cp -al: instant and free, but an in-place write to a file also changes the original;
+#   symlink  — ln -s: instant, but dangling inside a container that mounts the snapshot;
+#   none     — nothing.
+make_worktree() { # make_worktree PROJ_ROOT COMMIT DEST MODE LINKS...
+  local root="$1" commit="$2" dest="$3" mode="$4"; shift 4
   git -C "$root" worktree add --detach --quiet "$dest" "$commit" 2>/dev/null \
     || git -C "$root" worktree add --detach "$dest" "$commit" >/dev/null
   local l
   for l in "$@"; do
-    if [ -e "$root/$l" ] && [ ! -e "$dest/$l" ]; then
-      mkdir -p "$(dirname "$dest/$l")"
-      ln -s "$root/$l" "$dest/$l"
-    fi
+    [ -e "$root/$l" ] && [ ! -e "$dest/$l" ] || continue
+    mkdir -p "$(dirname "$dest/$l")"
+    case "$mode" in
+      copy)     cp -a "$root/$l" "$dest/$l" ;;
+      hardlink) cp -al "$root/$l" "$dest/$l" 2>/dev/null || cp -a "$root/$l" "$dest/$l" ;;
+      symlink)  ln -s "$root/$l" "$dest/$l" ;;
+      none)     ;;
+      *) die "unknown deps mode: $mode (copy|hardlink|symlink|none)" ;;
+    esac
   done
+}
+
+# Human-readable sizes of the dependency paths that exist in the project root.
+deps_report() { # deps_report PROJ_ROOT LINKS...
+  local root="$1"; shift
+  local l out=""
+  for l in "$@"; do [ -e "$root/$l" ] && out="$out $l $(du -sh "$root/$l" 2>/dev/null | cut -f1)"; done
+  printf '%s' "${out# }"
 }
 
 remove_worktree() { # remove_worktree PROJ_ROOT DEST

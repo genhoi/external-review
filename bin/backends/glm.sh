@@ -13,3 +13,5 @@ backend_env() {
 }
 backend_check() { backend_env >/dev/null 2>&1 || { echo "missing z.ai key: ZAI_API_KEY or ~/.claude/zai_api_key"; exit 1; }; echo "ok — $GLM_MODEL via z.ai"; }
 claude_dispatch "$@"
+
+exit $?

@@ -6,6 +6,7 @@
     extract.py progress FORMAT RAW        # one progress line for `review status`
     extract.py assemble --header H --protocol P --brief B [--lens L]... [--blind]
     extract.py merge    RUN_DIR           # merged.md to stdout
+    extract.py profile  ROOT [--source]   # project review profile text (or its source name)
 
 FORMAT: claude-stream-json | codex-jsonl | grok-messages | kimi-stream-json | text
 Standard library only.
@@ -62,6 +63,9 @@ class Parsed:
         self.duration_ms = None
         self.model = None
         self.errors = []
+        self.tokens_in = None      # total input tokens including cached
+        self.tokens_cached = None  # of which served from cache
+        self.tokens_out = None     # output tokens (reasoning included where reported)
 
     def report(self):
         if self.final and self.final.strip():
@@ -76,8 +80,23 @@ class Parsed:
         return {
             "session_id": self.session_id, "turns": self.turns, "tool_calls": len(self.tools),
             "cost_usd": self.cost, "duration_ms": self.duration_ms, "model": self.model,
+            "tokens_in": self.tokens_in, "tokens_cached": self.tokens_cached, "tokens_out": self.tokens_out,
             "errors": self.errors[-3:],
         }
+
+    def add_usage(self, usage):
+        """Accumulate a usage dict from any of the CLIs (field names differ)."""
+        if not isinstance(usage, dict):
+            return
+        cached = usage.get("cache_read_input_tokens", usage.get("cached_input_tokens", 0)) or 0
+        created = usage.get("cache_creation_input_tokens", usage.get("cache_write_input_tokens", 0)) or 0
+        raw_in = usage.get("input_tokens", 0) or 0
+        # Anthropic-style input_tokens excludes cache hits; Codex-style includes them.
+        total_in = raw_in + cached + created if "cache_read_input_tokens" in usage else max(raw_in, cached)
+        out = (usage.get("output_tokens", 0) or 0)
+        self.tokens_in = (self.tokens_in or 0) + total_in
+        self.tokens_cached = (self.tokens_cached or 0) + cached
+        self.tokens_out = (self.tokens_out or 0) + out
 
 
 def parse_claude(path):
@@ -101,6 +120,7 @@ def parse_claude(path):
             p.turns = ev.get("num_turns")
             p.cost = ev.get("total_cost_usd")
             p.duration_ms = ev.get("duration_ms")
+            p.add_usage(ev.get("usage"))
             if ev.get("is_error"):
                 p.errors.append(str(ev.get("result") or ev.get("error") or "error")[:300])
             elif isinstance(ev.get("result"), str):
@@ -129,6 +149,7 @@ def parse_codex(path):
                 p.tools.append(_tool_label(item.get("tool", "mcp"), item.get("arguments")))
         elif t == "turn.completed":
             p.turns = (p.turns or 0) + 1
+            p.add_usage(ev.get("usage"))
         elif t in ("error", "turn.failed"):
             p.errors.append(json.dumps(ev)[:300])
     # the -o file with the last message is more reliable when present
@@ -262,6 +283,34 @@ def assemble(args):
     return "\n".join(parts)
 
 
+# ---------- project profile ----------
+
+PROFILE_SOURCES = ("AGENTS.md", "CLAUDE.md", "agents.md", "claude.md")
+PROFILE_HEADING = re.compile(r"^(#{1,6})\s*(external review|внешнее ревью)\b.*$", re.I | re.M)
+
+
+def project_profile(root):
+    """Return (source, text) of the project's review profile, or (None, ''): the section headed
+    'External review' / 'Внешнее ревью' in AGENTS.md or CLAUDE.md, up to the next heading of the
+    same or higher level."""
+    root = Path(root)
+    for name in PROFILE_SOURCES:
+        f = root / name
+        if not f.exists():
+            continue
+        text = f.read_text(encoding="utf-8", errors="replace")
+        m = PROFILE_HEADING.search(text)
+        if not m:
+            continue
+        level = len(m.group(1))
+        rest = text[m.end():]
+        stop = re.search(rf"^#{{1,{level}}}\s", rest, re.M)
+        body = rest[: stop.start()] if stop else rest
+        if body.strip():
+            return f"{name} § {m.group(0).lstrip('#').strip()}", body.strip()
+    return None, ""
+
+
 # ---------- findings and merged report ----------
 
 def findings_from_report(text):
@@ -280,6 +329,25 @@ def findings_from_report(text):
 SEV_ORDER = {"critical": 0, "major": 1, "minor": 2, "info": 3}
 
 
+def _k(n):
+    """1234 -> '1.2k', 1234567 -> '1.2M', None -> '—'."""
+    if n is None:
+        return "—"
+    n = int(n)
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M"
+    if n >= 1_000:
+        return f"{n / 1_000:.1f}k"
+    return str(n)
+
+
+def tokens_line(m):
+    """'in 1.2M (cached 1.0M) out 45.1k' or '' when nothing was reported."""
+    if not m or m.get("tokens_in") is None and m.get("tokens_out") is None:
+        return ""
+    return f"in {_k(m.get('tokens_in'))} (cached {_k(m.get('tokens_cached'))}) out {_k(m.get('tokens_out'))}"
+
+
 def _norm_file(f):
     return (f or "").strip().lstrip("./")
 
@@ -292,8 +360,8 @@ def merge(run_dir):
     out.append(f"Run: `{run}`  ")
     out.append(f"Mode: {meta_run.get('mode')} · base: `{meta_run.get('base')}` · snapshot: `{meta_run.get('snapshot_commit', '')[:12]}` · lang: {meta_run.get('lang', '?')}  ")
     out.append("")
-    out.append("| Reviewer | Status | Turns | Tool calls | Duration | Cost | Files changed in snapshot |")
-    out.append("|---|---|---|---|---|---|---|")
+    out.append("| Reviewer | Status | Turns | Tool calls | Duration | Tokens in (cached) / out | Cost | Files changed in snapshot |")
+    out.append("|---|---|---|---|---|---|---|---|")
     all_findings = []
     reports = {}
     for r in reviewers:
@@ -310,7 +378,8 @@ def merge(run_dir):
             dur = int((b - a).total_seconds() * 1000)
         dur_s = f"{dur // 60000}m {dur % 60000 // 1000}s" if dur else "—"
         cost = f"${m['cost_usd']:.2f}" if isinstance(m.get("cost_usd"), (int, float)) else "—"
-        out.append(f"| {r} | {st} | {m.get('turns') or '—'} | {m.get('tool_calls') or '—'} | {dur_s} | {cost} | {len(changes)} |")
+        tok = f"{_k(m.get('tokens_in'))} ({_k(m.get('tokens_cached'))}) / {_k(m.get('tokens_out'))}" if m.get("tokens_in") is not None else "—"
+        out.append(f"| {r} | {st} | {m.get('turns') or '—'} | {m.get('tool_calls') or '—'} | {dur_s} | {tok} | {cost} | {len(changes)} |")
         if (d / "report.md").exists():
             text = (d / "report.md").read_text(encoding="utf-8", errors="replace")
             reports[r] = text
@@ -387,7 +456,11 @@ def main(argv):
         last = p.tools[-1] if p.tools else "—"
         snippet = (p.texts[-1].strip().splitlines() or [""])[-1][:70] if p.texts else ""
         err = f" ERR: {p.errors[-1][:80]}" if p.errors else ""
-        print(f"{len(p.tools)} tool calls; last: {last}; text: {snippet}{err}")
+        m = p.meta()
+        tl = tokens_line(m)
+        cost = f" ${m['cost_usd']:.2f}" if isinstance(m.get("cost_usd"), (int, float)) else ""
+        tail = f" · {tl}{cost}" if tl else ""
+        print(f"{len(p.tools)} tool calls; last: {last}; text: {snippet}{err}{tail}")
     elif cmd == "assemble":
         import argparse
         ap = argparse.ArgumentParser()
@@ -396,6 +469,11 @@ def main(argv):
         print(assemble(ap.parse_args(rest)))
     elif cmd == "merge":
         print(merge(rest[0]), end="")
+    elif cmd == "profile":
+        src, text = project_profile(rest[0])
+        if not src:
+            sys.exit(1)
+        print(src if len(rest) > 1 and rest[1] == "--source" else text)
     elif cmd == "findings":
         print(json.dumps(findings_from_report(Path(rest[0]).read_text(encoding="utf-8")), ensure_ascii=False, indent=1))
     else:

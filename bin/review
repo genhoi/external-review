@@ -3,6 +3,10 @@
 # Harness-agnostic: needs only bash, git and python3.
 set -u
 source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/common.sh"
+source "$ER_SKILL_DIR/bin/lib/finalize.sh"
+PROFILE_MARK="<!-- external-review: project profile -->"
+# Profile = the stable part of the brief: a "## External review" section in AGENTS.md / CLAUDE.md.
+# Printed by `py profile ROOT`; source name with --source.
 
 usage() {
   cat <<'USAGE'
@@ -10,7 +14,7 @@ review — a second opinion on code from other models
 
   review doctor                         which reviewers are available and what is missing
   review config [set KEY VALUE]         effective models / effort / language and the override file
-  review brief [--out FILE] [--lang L]  brief template (fill it in before run)
+  review brief [--out FILE] [--lang L]  brief template + project profile ("## External review" in AGENTS.md/CLAUDE.md)
   review run --brief FILE [options]     start reviewers in the background; prints the run directory
       --reviewers auto|glm,kimi,grok,codex,opus,kimi-cli   (auto = everyone who passes doctor)
       --mode diff|repo|plan             diff: changes against base (default)
@@ -21,7 +25,8 @@ review — a second opinion on code from other models
       --blind                           strip intent and "known decisions" from the brief
       --prompt-file FILE                your own prompt instead of protocol+brief (experiments)
       --timeout SEC                     per-reviewer limit (default 2700)
-      --link PATH                       symlink from the working tree into the snapshot (repeatable;
+      --deps copy|hardlink|symlink|none how ignored dependencies get into the snapshot (default: REVIEW_DEPS=copy)
+      --link PATH                       extra dependency path to bring in (repeatable;
                                         default: vendor node_modules .venv .env .env.local .env.test)
       --effort LEVEL                    effort for the claude family (default max)
   review status [RUN]                   progress (RUN = path or name; default: latest run of this project)
@@ -72,15 +77,28 @@ cmd_config() {
   echo "change: review config set CODEX_MODEL gpt-5.7-sol   (or export CODEX_MODEL=... for one run)"
 }
 
+append_profile() { # append_profile ROOT FILE — add the project profile section (idempotent via marker)
+  local root="$1" file="$2" src
+  grep -qF "$PROFILE_MARK" "$file" 2>/dev/null && return 0
+  src="$(py profile "$root" --source 2>/dev/null)" || return 1
+  { echo; echo "## Project profile (from $src)"; echo "$PROFILE_MARK"; echo; py profile "$root"; } >> "$file"
+  echo "$src"
+}
+
 cmd_brief() {
   local out="" lang="$REVIEW_LANG"
   while [ $# -gt 0 ]; do case "$1" in --out) out="$2"; shift 2;; --lang) lang="$2"; shift 2;; *) die "brief: unknown option $1";; esac; done
   local src; src="$(lang_dir "$lang")/brief.md"
-  if [ -n "$out" ]; then cp "$src" "$out"; echo "$out"; else cat "$src"; fi
+  local root; root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+  local tmp; tmp="$(mktemp)"; cp "$src" "$tmp"
+  local from=""
+  [ -z "$root" ] || from="$(append_profile "$root" "$tmp" || true)"
+  [ -z "$from" ] || warn "project profile appended from $from — fill in only the per-run sections"
+  if [ -n "$out" ]; then mv "$tmp" "$out"; echo "$out"; else cat "$tmp"; rm -f "$tmp"; fi
 }
 
-write_header() { # write_header RUN MODE BASE HEAD PROJ_ROOT LINKS LANG
-  local run="$1" mode="$2" base="$3" head="$4" root="$5" links="$6" lang="$7"
+write_header() { # write_header RUN MODE BASE HEAD PROJ_ROOT LINKS LANG DEPS
+  local run="$1" mode="$2" base="$3" head="$4" root="$5" links="$6" lang="$7" deps="$8"
   local stat; stat="$(git -C "$run/_snapshot_ref" diff --stat "$base...HEAD" 2>/dev/null | tail -n 60)"
   if [ "$lang" = "ru" ]; then
     {
@@ -88,7 +106,12 @@ write_header() { # write_header RUN MODE BASE HEAD PROJ_ROOT LINKS LANG
       echo "- Ты работаешь в одноразовом снапшоте репозитория: \`\$PWD\` (detached git worktree на коммит \`${head:0:12}\`)."
       echo "  Всё, что ты здесь меняешь, никуда не попадает. Можно запускать тесты, писать одноразовые скрипты и тесты, править код ради воспроизведения."
       echo "- Оригинальное рабочее дерево: \`$root\` — НЕ трогай его и ничего туда не пиши."
-      [ -n "$links" ] && echo "- Симлинки в оригинал (не менять содержимое): $links."
+      case "$deps" in
+        copy)     [ -n "$links" ] && echo "- Зависимости ($links) СКОПИРОВАНЫ в снапшот: это обычные каталоги, тесты запускай прямо здесь. Если тесты идут в docker — монтируй в контейнер ЭТОТ каталог (\`\$PWD\`), а не оригинальный репозиторий, иначе проверишь не тот код." ;;
+        hardlink) [ -n "$links" ] && echo "- Зависимости ($links) — хардлинки на оригинал: НЕ редактируй их файлы на месте (это изменит оригинал). Тесты запускай здесь; в docker монтируй \`\$PWD\`." ;;
+        symlink)  [ -n "$links" ] && echo "- Зависимости ($links) — симлинки в оригинал (не менять содержимое). Внутри docker-контейнера, куда смонтирован снапшот, они не разрешатся: команды тестов из вводной проверь." ;;
+        none)     echo "- Игнорируемые зависимости (vendor, node_modules, .venv) в снапшот НЕ перенесены: установи их сам или запускай тесты так, как описано во вводной." ;;
+      esac
       echo "- Никаких \`git push\`, коммитов в чужие ветки и сетевых действий с чужими системами."
       echo "- Режим ревью: **$mode**."
       case "$mode" in
@@ -105,7 +128,12 @@ write_header() { # write_header RUN MODE BASE HEAD PROJ_ROOT LINKS LANG
       echo "- You are working in a disposable snapshot of the repository: \`\$PWD\` (detached git worktree at commit \`${head:0:12}\`)."
       echo "  Nothing you change here goes anywhere. You may run tests, write throwaway scripts and tests, and modify code to reproduce a hypothesis."
       echo "- The original working tree is \`$root\` — do NOT touch it and do not write anything there."
-      [ -n "$links" ] && echo "- Symlinks into the original (do not modify their contents): $links."
+      case "$deps" in
+        copy)     [ -n "$links" ] && echo "- Dependencies ($links) are COPIED into the snapshot: real directories, run the tests right here. If the tests run in docker, mount THIS directory (\`\$PWD\`) into the container, not the original repository, or you will test the wrong code." ;;
+        hardlink) [ -n "$links" ] && echo "- Dependencies ($links) are hardlinks to the original: do NOT edit their files in place (that changes the original). Run the tests here; in docker mount \`\$PWD\`." ;;
+        symlink)  [ -n "$links" ] && echo "- Dependencies ($links) are symlinks into the original (do not modify their contents). Inside a docker container that mounts the snapshot they will not resolve: double-check the test commands from the brief." ;;
+        none)     echo "- Ignored dependencies (vendor, node_modules, .venv) were NOT brought into the snapshot: install them yourself or run the tests as described in the brief." ;;
+      esac
       echo "- No \`git push\`, no commits to other branches, no network actions against other systems."
       echo "- Review mode: **$mode**."
       case "$mode" in
@@ -120,14 +148,14 @@ write_header() { # write_header RUN MODE BASE HEAD PROJ_ROOT LINKS LANG
 }
 
 cmd_run() {
-  local brief="" reviewers="auto" mode="diff" base="" plan="" lens="" blind="" prompt_file="" timeout="$ER_DEFAULT_TIMEOUT" effort="max" lang="$REVIEW_LANG"
+  local brief="" reviewers="auto" mode="diff" base="" plan="" lens="" blind="" prompt_file="" timeout="$ER_DEFAULT_TIMEOUT" effort="max" lang="$REVIEW_LANG" deps="$REVIEW_DEPS"
   local links="$ER_DEFAULT_LINKS" extra_links=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --brief) brief="$2"; shift 2;; --reviewers) reviewers="$2"; shift 2;; --mode) mode="$2"; shift 2;;
       --base) base="$2"; shift 2;; --plan) plan="$2"; shift 2;; --lens) lens="$2"; shift 2;; --lang) lang="$2"; shift 2;;
       --blind) blind=1; shift;; --prompt-file) prompt_file="$2"; shift 2;; --timeout) timeout="$2"; shift 2;;
-      --link) extra_links="$extra_links $2"; shift 2;; --effort) effort="$2"; shift 2;;
+      --link) extra_links="$extra_links $2"; shift 2;; --effort) effort="$2"; shift 2;; --deps) deps="$2"; shift 2;;
       -h|--help) usage; exit 0;; *) die "run: unknown option $1";;
     esac
   done
@@ -136,12 +164,13 @@ cmd_run() {
   case "$mode" in diff|repo|plan) ;; *) die "run: --mode diff|repo|plan";; esac
   [ "$mode" != "plan" ] || [ -f "${plan:-/nonexistent}" ] || die "run: --mode plan requires --plan FILE"
   local pdir; pdir="$(lang_dir "$lang")"
+  case "$deps" in copy|hardlink|symlink|none) ;; *) die "run: --deps copy|hardlink|symlink|none";; esac
 
   local root name run snap_commit
   root="$(proj_root)"; name="$(basename "$root")"
   mkdir -p "$ER_RUNS"
   run="$(mktemp -d "$ER_RUNS/$name-$(date +%Y%m%d-%H%M%S)-XXXX")"   # suffix: two runs in the same second must not collide
-  echo "$root" > "$run/project_root"; echo "$timeout" > "$run/timeout"; echo "$lang" > "$run/lang"
+  echo "$root" > "$run/project_root"; echo "$timeout" > "$run/timeout"; echo "$lang" > "$run/lang"; echo "$deps" > "$run/deps"
   printf '%s\n' $links $extra_links > "$run/links"
 
   snap_commit="$(snapshot_commit "$root")"
@@ -152,8 +181,8 @@ cmd_run() {
     base="$mb"
   fi
 
-  make_worktree "$root" "$snap_commit" "$run/_snapshot_ref"
-  write_header "$run" "$mode" "$base" "$snap_commit" "$root" "$(echo $links $extra_links)" "$lang"
+  make_worktree "$root" "$snap_commit" "$run/_snapshot_ref" none
+  write_header "$run" "$mode" "$base" "$snap_commit" "$root" "$(echo $links $extra_links)" "$lang" "$deps"
   remove_worktree "$root" "$run/_snapshot_ref"
 
   local lens_args=() l
@@ -167,6 +196,9 @@ cmd_run() {
     { cat "$run/header.md"; echo; cat "$prompt_file"; } > "$run/prompt.md"
   else
     cp "$brief" "$run/brief.md"
+    # project profile: appended when the brief was not seeded from it (marker absent)
+    local from; from="$(append_profile "$root" "$run/brief.md" || true)"
+    [ -z "$from" ] || warn "project profile appended to the brief from $from"
     py assemble --header "$run/header.md" --protocol "$pdir/reviewer.md" --brief "$run/brief.md" \
       "${lens_args[@]}" ${blind:+--blind} > "$run/prompt.md"
   fi
@@ -190,14 +222,16 @@ PY
   for r in $list; do
     d="$run/$r"; mkdir -p "$d"
     bash "$ER_SKILL_DIR/bin/backends/${r%%:*}.sh" format > "$d/format" 2>/dev/null || { warn "no backend $r — skipping"; rm -rf "$d"; continue; }
-    make_worktree "$root" "$snap_commit" "$d/snapshot" $links $extra_links
+    make_worktree "$root" "$snap_commit" "$d/snapshot" "$deps" $links $extra_links
     [ "$mode" != "plan" ] || cp "$plan" "$d/snapshot/plan.md"
     uuid > "$d/session"
     echo queued > "$d/status"
-    ER_SKILL_DIR="$ER_SKILL_DIR" ER_EFFORT="$effort" setsid nohup bash "$ER_SKILL_DIR/bin/lib/launch.sh" "$run" "$r" >/dev/null 2>&1 < /dev/null &
+    ER_EFFORT="$effort" setsid nohup bash "$ER_SKILL_DIR/bin/lib/launch.sh" "$run" "$r" >/dev/null 2>&1 < /dev/null &
     echo $! > "$d/pid"
   done
   echo "$run"
+  local dr; dr="$(deps_report "$root" $links $extra_links)"
+  [ -z "$dr" ] || echo "deps ($deps): $dr" >&2
   echo "started: $list" >&2
   echo "progress: review status $run · wait: review wait $run · merge: review collect $run" >&2
 }
@@ -209,14 +243,27 @@ elapsed() { # elapsed DIR
   printf '%dm%02ds' $(( (b-a)/60 )) $(( (b-a)%60 ))
 }
 
+# A wrapper that vanished without writing a final status (killed, or the skill was edited mid-run):
+# finalize it from what is on disk — a report means "done", whatever the exit code.
+reap_dead() { # reap_dead RUN
+  local r d st
+  for r in $(run_reviewers "$1"); do
+    d="$1/$r"; st="$(status_of "$1" "$r")"
+    case "$st" in queued|running) ;; *) continue;; esac
+    [ -f "$d/pid" ] && kill -0 "$(cat "$d/pid")" 2>/dev/null && continue
+    finalize_reviewer "$1" "$r" died
+  done
+}
+
 cmd_status() {
   local run; run="$(resolve_run "${1:-}")"
+  reap_dead "$run"
   echo "run: $run"
-  local r d st
+  local r d st ex
   for r in $(run_reviewers "$run"); do
-    d="$run/$r"; st="$(status_of "$run" "$r")"
-    if [ "$st" = running ] && [ -f "$d/pid" ] && ! kill -0 "$(cat "$d/pid")" 2>/dev/null; then st="died"; fi
-    printf '%-9s %-10s %-8s %s\n' "$r" "$st" "$(elapsed "$d")" "$(py progress "$(cat "$d/format")" "$d/raw" 2>/dev/null)"
+    d="$run/$r"; st="$(status_of "$run" "$r")"; ex="$(cat "$d/exit" 2>/dev/null || true)"
+    if [ "$st" = "done" ] && [ -n "$ex" ] && [ "$ex" != 0 ]; then st="done(exit $ex)"; fi
+    printf '%-14s %-8s %s\n' "$r $st" "$(elapsed "$d")" "$(py progress "$(cat "$d/format")" "$d/raw" 2>/dev/null)"
   done
 }
 
@@ -228,6 +275,7 @@ cmd_wait() {
   run="$(resolve_run "$run")"
   local t0; t0=$(date +%s)
   while :; do
+    reap_dead "$run"
     local busy="" r
     for r in $(run_reviewers "$run"); do case "$(status_of "$run" "$r")" in queued|running) busy="$busy $r";; esac; done
     if [ -z "$busy" ]; then cmd_status "$run"; echo "all reviewers finished: review collect $run"; return 0; fi
@@ -240,6 +288,7 @@ cmd_wait() {
 
 cmd_collect() {
   local run; run="$(resolve_run "${1:-}")"
+  reap_dead "$run"
   py merge "$run" > "$run/merged.md"
   echo "$run/merged.md"
 }
@@ -294,3 +343,4 @@ case "${1:-}" in
   -h|--help|help|"") usage;;
   *) die "unknown command: $1 (review --help)";;
 esac
+exit $?
