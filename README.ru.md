@@ -132,6 +132,15 @@ ln -sfn ~/.claude/skills/external-review ~/.agents/skills/external-review   # ki
 ln -sfn ~/.claude/skills/external-review ~/.grok/skills/external-review     # grok
 ```
 
+## Обратная связь
+
+Каждое использование оставляет след на той машине, где запускалось, независимо от харнесса: журнал
+(`~/.local/state/external-review/usage.jsonl` — команды, рецензенты, длительности, токены, без кода)
+и заключительная заметка оркестратора (`review feedback RUN "что помогло / что мешало /
+принято vs отклонено"`, последний шаг скилла). `review feedback --digest` собирает их в Markdown,
+`review feedback --issue` отправляет issue в этот репозиторий, чтобы улучшать скилл по реальным прогонам.
+`EXTERNAL_REVIEW_NO_USAGE=1` выключает журнал.
+
 ## Настройка
 
 ```bash

@@ -72,6 +72,17 @@ echo running > "$RUN4/fake/status"; echo 999999 > "$RUN4/fake/pid"; rm -f "$RUN4
 "$R" status "$RUN4" | grep -q 'fake done(exit died)'; pass "died + report on disk → done(exit died)"
 "$R" wait "$RUN4" --max 5 >/dev/null; pass "wait does not block on a dead reviewer"
 
+echo "== usage journal and feedback"
+U="$EXTERNAL_REVIEW_HOME/usage.jsonl"
+grep -q '"event": "run"' "$U" && grep -q '"event": "collect"' "$U" && grep -q '"event": "preflight"' "$U" && grep -q '"event": "ask"' "$U"; pass "usage.jsonl has run/collect/preflight/ask events"
+grep -q '"reviewers": {"fake": {"status": "done"' "$U"; pass "collect records per-reviewer summary"
+"$R" feedback "$RUN" "stub run: nothing blocked; 1 accepted, 0 rejected" | grep -q 'saved:'; pass "feedback note saved"
+[ -f "$RUN/feedback.md" ] && grep -q 'stub run' "$EXTERNAL_REVIEW_HOME/feedback.jsonl"; pass "note in run dir and feedback.jsonl"
+"$R" feedback --digest | grep -q '## Notes from orchestrators' && "$R" feedback --digest | grep -q '| fake |'; pass "digest lists notes and reviewer stats"
+"$R" feedback --digest --since 2099-01-01 | grep -q 'runs: 0'; pass "digest --since filters"
+n=$(wc -l < "$U"); EXTERNAL_REVIEW_NO_USAGE=1 "$R" status "$RUN" >/dev/null; [ "$(wc -l < "$U")" -eq "$n" ]; pass "EXTERNAL_REVIEW_NO_USAGE=1 disables the journal"
+! "$R" feedback "$RUN" "" >/dev/null 2>&1; pass "empty note rejected"
+
 echo "== two runs in the same second get distinct dirs"
 A="$("$R" run --reviewers fake --brief "$TMP/brief.md" --base main 2>/dev/null)"; B="$("$R" run --reviewers fake --brief "$TMP/brief.md" --base main 2>/dev/null)"
 [ "$A" != "$B" ]; pass "distinct run dirs"

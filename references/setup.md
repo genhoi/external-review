@@ -60,6 +60,8 @@ model does not hallucinate and follows the protocol.
 |---|---|---|
 | `REVIEW_DEPS` | `copy` | how ignored dependencies get into the snapshot: `copy` (safe, docker-friendly), `hardlink` (instant; an in-place edit changes the original), `symlink` (dangling inside containers), `none` |
 | `REVIEW_LANG` | `en` | language of the protocol and reports: `en` or `ru` (`review config set REVIEW_LANG ru`) |
+| `EXTERNAL_REVIEW_NO_USAGE` | — | `1` disables the local usage journal (`usage.jsonl`) |
+| `EXTERNAL_REVIEW_REPO` | `genhoi/external-review` | where `review feedback --issue` posts |
 | `EXTERNAL_REVIEW_HOME` | `~/.local/state/external-review` | runs, snapshots, config dirs |
 | `EXTERNAL_REVIEW_TIMEOUT` | `2700` | seconds per reviewer |
 | `GLM_MODEL` / `KIMI_MODEL` / `OPUS_MODEL` / `GROK_MODEL` / `CODEX_MODEL` / `KIMI_CLI_MODEL` | `review config` | reviewer model (prefer `review config set`) |

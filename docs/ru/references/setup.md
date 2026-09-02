@@ -60,6 +60,8 @@ z.ai и Kimi — их доки по Claude Code (суффикс `[1m]` толь�
 |---|---|---|
 | `REVIEW_DEPS` | `copy` | как зависимости попадают в снапшот: `copy` (безопасно, работает с docker), `hardlink` (мгновенно; правка файла на месте изменит оригинал), `symlink` (внутри контейнера висячий), `none` |
 | `REVIEW_LANG` | `en` | язык протокола и отчётов: `en` или `ru` (`review config set REVIEW_LANG ru`) |
+| `EXTERNAL_REVIEW_NO_USAGE` | — | `1` выключает локальный журнал использования (`usage.jsonl`) |
+| `EXTERNAL_REVIEW_REPO` | `genhoi/external-review` | куда `review feedback --issue` отправляет issue |
 | `EXTERNAL_REVIEW_HOME` | `~/.local/state/external-review` | прогоны, снапшоты, config dir'ы |
 | `EXTERNAL_REVIEW_TIMEOUT` | `2700` | секунд на рецензента |
 | `GLM_MODEL` / `KIMI_MODEL` / `OPUS_MODEL` / `GROK_MODEL` / `CODEX_MODEL` / `KIMI_CLI_MODEL` | `review config` | модель рецензента (лучше через `review config set`) |

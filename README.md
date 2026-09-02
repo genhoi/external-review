@@ -137,6 +137,15 @@ ln -sfn ~/.claude/skills/external-review ~/.agents/skills/external-review   # ki
 ln -sfn ~/.claude/skills/external-review ~/.grok/skills/external-review     # grok
 ```
 
+## Feedback loop
+
+Every use leaves a trace on the machine it ran on, whatever the harness: a usage journal
+(`~/.local/state/external-review/usage.jsonl` — commands, reviewers, durations, tokens, no code) and
+the orchestrator's closing note (`review feedback RUN "what helped / what blocked / accepted vs
+rejected"`, the last step of the skill). `review feedback --digest` turns them into Markdown;
+`review feedback --issue` posts it to this repository so the skill can be improved from real runs.
+Set `EXTERNAL_REVIEW_NO_USAGE=1` to disable the journal.
+
 ## Configuration
 
 ```bash

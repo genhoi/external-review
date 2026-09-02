@@ -4,6 +4,8 @@
 set -u
 source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/common.sh"
 source "$ER_SKILL_DIR/bin/lib/finalize.sh"
+source "$ER_SKILL_DIR/bin/lib/usage.sh"
+ER_REPO="${EXTERNAL_REVIEW_REPO:-genhoi/external-review}"
 PROFILE_MARK="<!-- external-review: project profile -->"
 # Profile = the stable part of the brief: a "## External review" section in AGENTS.md / CLAUDE.md.
 # Printed by `py profile ROOT`; source name with --source.
@@ -35,6 +37,9 @@ review — a second opinion on code from other models
   review wait [RUN] [--max SEC]         wait; returns within ≤110 s: exit 0 = all done, exit 3 = call again
   review collect [RUN]                  build merged.md (findings table × reviewer + full reports)
   review ask RUN REVIEWER "question"    continue a reviewer's session (counter-evidence, clarification)
+  review feedback RUN "note"            save the orchestrator's note on this run (what helped, what blocked, accepted/rejected)
+  review feedback --digest [--since D]  usage journal + notes of this machine as Markdown
+  review feedback --issue [--since D]   post the digest as a GitHub issue to the skill's repository (gh)
   review logs RUN REVIEWER              stderr tail and progress
   review runs                           runs of the current project
   review clean [RUN|--all]              remove worktrees and the run directory (--all: every run and preflight of this project)
@@ -232,6 +237,7 @@ PY
     echo $! > "$d/pid"
   done
   echo "$run"
+  usage_log run run="$(basename "$run")" mode="$mode" lang="$lang" deps="$deps" reviewers="$(echo $list | tr ' ' ',')" blind="${blind:-0}" lens="$lens" profile="$(py profile "$root" --source 2>/dev/null || echo none)" prompt_file="${prompt_file:+1}"
   local dr; dr="$(deps_report "$root" $links $extra_links)"
   [ -z "$dr" ] || echo "deps ($deps): $dr" >&2
   if [ "$deps" = copy ]; then
@@ -256,7 +262,9 @@ cmd_preflight() {
   local dr; dr="$(deps_report "$root" $links $extra_links)"; [ -z "$dr" ] || echo "deps ($deps): $dr" >&2
   echo "snapshot: $dir/snapshot" >&2
   echo "running:  $cmd" >&2
+  local t0; t0=$(date +%s)
   ( cd "$dir/snapshot" && timeout -k 30 "$timeout" bash -lc "$cmd" ) > "$dir/output" 2>&1; local code=$?
+  usage_log preflight exit="$code" seconds="$(( $(date +%s) - t0 ))" deps="$deps"
   echo "--- output (last 30 lines) ---"; tail -n 30 "$dir/output"; echo "--- exit code: $code ---"
   remove_worktree "$root" "$dir/snapshot"
   if [ "$code" -eq 0 ]; then rm -rf "$dir"; echo "preflight OK — the command works inside a snapshot; the brief can say so"
@@ -318,6 +326,8 @@ cmd_collect() {
   local run; run="$(resolve_run "${1:-}")"
   reap_dead "$run"
   py merge "$run" > "$run/merged.md"
+  py summary "$run" > "$run/summary.json" 2>/dev/null || true
+  usage_log collect run="$(basename "$run")" reviewers="@$run/summary.json"
   echo "$run/merged.md"
 }
 
@@ -328,8 +338,43 @@ cmd_ask() {
   export ER_RUN="$run" ER_REVIEWER="$r" ER_DIR="$d" ER_SNAPSHOT="$d/snapshot" ER_PROMPT="$run/prompt.md"
   export ER_PROJ_ROOT="$(cat "$run/project_root")" ER_TIMEOUT="$(cat "$run/timeout")"
   local n; n=$(ls "$d"/ask-*.md 2>/dev/null | wc -l); n=$((n+1))
+  usage_log ask run="$(basename "$run")" reviewer="$r" n="$n"
   { echo "## Question"; echo; echo "$msg"; echo; echo "## Answer ($r)"; echo; } > "$d/ask-$n.md"
   timeout -k 30 "$ER_TIMEOUT" bash "$ER_SKILL_DIR/bin/backends/${r%%:*}.sh" ask "$msg" 2>>"$d/stderr.log" | tee -a "$d/ask-$n.md"
+}
+
+cmd_feedback() {
+  local since="" mode="note" run="" text="" file=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --digest) mode=digest; shift;; --issue) mode=issue; shift;; --since) since="$2"; shift 2;; --file) file="$2"; shift 2;;
+      *) if [ -z "$run" ]; then run="$1"; else text="$1"; fi; shift;;
+    esac
+  done
+  case "$mode" in
+    digest) py digest "$ER_HOME" ${since:+--since "$since"};;
+    issue)
+      command -v gh >/dev/null || die "feedback --issue needs the gh CLI; run: review feedback --digest and paste it into https://github.com/$ER_REPO/issues"
+      local body; body="$(mktemp)"; py digest "$ER_HOME" ${since:+--since "$since"} > "$body"
+      gh issue create -R "$ER_REPO" --title "Field feedback: $(hostname) $(date +%Y-%m-%d)" --body-file "$body" --label feedback 2>/dev/null \
+        || gh issue create -R "$ER_REPO" --title "Field feedback: $(hostname) $(date +%Y-%m-%d)" --body-file "$body"
+      rm -f "$body";;
+    note)
+      [ -n "$run" ] || die 'feedback: usage: review feedback RUN "note" | --file FILE | --digest | --issue'
+      run="$(resolve_run "$run")"
+      [ -n "$file" ] && text="$(cat "$file")"
+      [ -n "$text" ] || die "feedback: the note is empty"
+      printf '%s\n' "$text" > "$run/feedback.md"
+      python3 - "$ER_HOME/feedback.jsonl" "$(basename "$run")" "$(proj_name)" "$(usage_harness)" "$run/feedback.md" <<'PY'
+import json, sys, datetime
+path, run, project, harness, note = sys.argv[1:6]
+rec = {"ts": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "run": run,
+       "project": project, "harness": harness, "note": open(note, encoding="utf-8").read().strip()}
+with open(path, "a", encoding="utf-8") as fh: fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+PY
+      usage_log feedback run="$(basename "$run")" chars="$(wc -c < "$run/feedback.md")"
+      echo "saved: $run/feedback.md (and $ER_HOME/feedback.jsonl) — share with: review feedback --issue";;
+  esac
 }
 
 cmd_logs() {
@@ -352,7 +397,7 @@ cmd_clean() {
       remove_worktree "$root" "$run/$r/snapshot"
     done
     [ ! -d "$run/snapshot" ] || remove_worktree "$root" "$run/snapshot"   # preflight dir
-    rm -rf "$run"; echo "removed $run"
+    rm -rf "$run"; echo "removed $run"; usage_log clean run="$(basename "$run")"
   done
   git -C "$root" worktree prune 2>/dev/null || true
 }
@@ -367,6 +412,7 @@ case "${1:-}" in
   wait) shift; cmd_wait "$@";;
   collect) shift; cmd_collect "$@";;
   ask) shift; cmd_ask "$@";;
+  feedback) shift; cmd_feedback "$@";;
   logs) shift; cmd_logs "$@";;
   runs) shift; cmd_runs "$@";;
   clean) shift; cmd_clean "$@";;

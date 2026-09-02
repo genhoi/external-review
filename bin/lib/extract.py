@@ -7,6 +7,8 @@
     extract.py assemble --header H --protocol P --brief B [--lens L]... [--blind]
     extract.py merge    RUN_DIR           # merged.md to stdout
     extract.py profile  ROOT [--source]   # project review profile text (or its source name)
+    extract.py summary  RUN_DIR           # per-reviewer JSON summary for the usage journal
+    extract.py digest   HOME [--since D]  # Markdown digest of usage.jsonl + feedback.jsonl
 
 FORMAT: claude-stream-json | codex-jsonl | grok-messages | kimi-stream-json | text
 Standard library only.
@@ -441,6 +443,86 @@ def merge(run_dir):
     return "\n".join(out) + "\n"
 
 
+# ---------- usage summary and digest ----------
+
+def run_summary(run_dir):
+    """Per-reviewer compact summary of a run (for the usage journal): no report text."""
+    run = Path(run_dir)
+    out = {}
+    for d in sorted(p for p in run.iterdir() if p.is_dir() and (p / "status").exists()):
+        m = json.loads((d / "meta.json").read_text()) if (d / "meta.json").exists() else {}
+        data = findings_from_report((d / "report.md").read_text(encoding="utf-8", errors="replace")) if (d / "report.md").exists() else {}
+        sev = {}
+        for f in data.get("findings", []) or []:
+            if isinstance(f, dict):
+                sev[str(f.get("severity"))] = sev.get(str(f.get("severity")), 0) + 1
+        out[d.name] = {"status": (d / "status").read_text().strip(), "exit": (d / "exit").read_text().strip() if (d / "exit").exists() else None,
+                       "duration_ms": m.get("duration_ms"), "tool_calls": m.get("tool_calls"), "tokens_in": m.get("tokens_in"),
+                       "tokens_out": m.get("tokens_out"), "cost_usd": m.get("cost_usd"), "findings": sev or None,
+                       "verdict": data.get("verdict"), "asks": len(list(d.glob("ask-*.md")))}
+    return out
+
+
+def digest(home, since=None):
+    """Markdown digest of usage.jsonl + feedback.jsonl (this machine)."""
+    home = Path(home)
+    def load(name):
+        p = home / name
+        if not p.exists():
+            return []
+        rows = [json.loads(l) for l in p.read_text(encoding="utf-8").splitlines() if l.strip()]
+        return [r for r in rows if not since or r.get("ts", "") >= since]
+    usage, notes = load("usage.jsonl"), load("feedback.jsonl")
+    out = [f"# external-review — field digest ({os.uname().nodename}{', since ' + since if since else ''})", ""]
+    runs = [r for r in usage if r.get("event") == "run"]
+    collects = [r for r in usage if r.get("event") == "collect"]
+    pre = [r for r in usage if r.get("event") == "preflight"]
+    asks = [r for r in usage if r.get("event") == "ask"]
+    out.append(f"- runs: {len(runs)} · collected: {len(collects)} · asks: {len(asks)} · preflights: {len(pre)} "
+               f"(failed: {sum(1 for r in pre if r.get('exit') not in (0, '0'))}) · notes: {len(notes)}")
+    if runs:
+        projects = sorted({r.get("project") for r in runs})
+        harness = {}
+        for r in runs:
+            harness[r.get("harness")] = harness.get(r.get("harness"), 0) + 1
+        out.append(f"- projects: {', '.join(p for p in projects if p)}")
+        out.append("- orchestrators: " + ", ".join(f"{k} ×{v}" for k, v in sorted(harness.items(), key=lambda x: -x[1])))
+        modes = {}
+        for r in runs:
+            key = f"{r.get('mode')}/{r.get('lang')}/{r.get('deps')}"
+            modes[key] = modes.get(key, 0) + 1
+        out.append("- mode/lang/deps: " + ", ".join(f"{k} ×{v}" for k, v in sorted(modes.items(), key=lambda x: -x[1])))
+        out.append(f"- with project profile: {sum(1 for r in runs if r.get('profile') not in (None, 'none', ''))} · blind: {sum(1 for r in runs if str(r.get('blind')) == '1')} · custom prompt: {sum(1 for r in runs if r.get('prompt_file'))}")
+    # per reviewer stats from collects
+    stats = {}
+    for c in collects:
+        for name, r in (c.get("reviewers") or {}).items():
+            if not isinstance(r, dict):
+                continue
+            st = stats.setdefault(name, {"n": 0, "done": 0, "dur": [], "tools": [], "tok_in": [], "tok_out": [], "cost": [], "findings": 0, "asks": 0})
+            st["n"] += 1
+            st["done"] += 1 if str(r.get("status", "")).startswith("done") else 0
+            for key, field in (("dur", "duration_ms"), ("tools", "tool_calls"), ("tok_in", "tokens_in"), ("tok_out", "tokens_out"), ("cost", "cost_usd")):
+                if isinstance(r.get(field), (int, float)):
+                    st[key].append(r[field])
+            st["findings"] += sum((r.get("findings") or {}).values()) if isinstance(r.get("findings"), dict) else 0
+            st["asks"] += r.get("asks") or 0
+    if stats:
+        out += ["", "## Reviewers (from collected runs)", "", "| Reviewer | Runs | Done | Avg duration | Avg tool calls | Avg tokens in / out | Avg cost | Findings | Asks |", "|---|---|---|---|---|---|---|---|---|"]
+        avg = lambda xs: (sum(xs) / len(xs)) if xs else None
+        for name, st in sorted(stats.items()):
+            d = avg(st["dur"]); dur = f"{int(d // 60000)}m {int(d % 60000 // 1000)}s" if d else "—"
+            c = avg(st["cost"]); cost = f"${c:.2f}" if c is not None else "—"
+            out.append(f"| {name} | {st['n']} | {st['done']} | {dur} | {_k(avg(st['tools']))} | {_k(avg(st['tok_in']))} / {_k(avg(st['tok_out']))} | {cost} | {st['findings']} | {st['asks']} |")
+    if notes:
+        out += ["", "## Notes from orchestrators", ""]
+        for n in notes:
+            out += [f"### {n.get('ts', '')[:10]} · {n.get('project')} · {n.get('harness')} · run {n.get('run')}", "", n.get("note", "").strip(), ""]
+    else:
+        out += ["", "_No notes yet: after a review, run `review feedback RUN \"what helped / what blocked / accepted vs rejected\"`._"]
+    return "\n".join(out) + "\n"
+
+
 # ---------- CLI ----------
 
 def main(argv):
@@ -469,6 +551,11 @@ def main(argv):
         print(assemble(ap.parse_args(rest)))
     elif cmd == "merge":
         print(merge(rest[0]), end="")
+    elif cmd == "summary":
+        print(json.dumps(run_summary(rest[0]), ensure_ascii=False))
+    elif cmd == "digest":
+        since = rest[rest.index("--since") + 1] if "--since" in rest else None
+        print(digest(rest[0], since), end="")
     elif cmd == "profile":
         src, text = project_profile(rest[0])
         if not src:
