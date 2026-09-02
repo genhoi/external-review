@@ -10,7 +10,7 @@ case "$1" in
   run)
     mapfile -t sb < <(sandbox_args)
     exec "$CODEX_BIN" exec -C "$ER_SNAPSHOT" "${sb[@]}" \
-      -c "model_reasoning_effort=\"${CODEX_EFFORT:-xhigh}\"" -m "${CODEX_MODEL:-gpt-5.6-sol}" \
+      -c "model_reasoning_effort=\"$CODEX_EFFORT\"" -m "$CODEX_MODEL" \
       --skip-git-repo-check --json -o "$ER_DIR/last_message.md" - < "$ER_PROMPT" ;;
   ask)
     tid="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("session_id") or "")' "$ER_DIR/meta.json")"
@@ -21,6 +21,6 @@ case "$1" in
   check)
     command -v "$CODEX_BIN" >/dev/null || { echo "нет бинаря codex (см. references/setup.md)"; exit 1; }
     "$CODEX_BIN" login status >/dev/null 2>&1 || { echo "codex не залогинен: codex login --device-auth"; exit 1; }
-    echo "ok — ${CODEX_MODEL:-gpt-5.6-sol}, effort ${CODEX_EFFORT:-xhigh}" ;;
+    echo "ok — $CODEX_MODEL, effort $CODEX_EFFORT" ;;
   *) die "codex backend: неизвестная команда $1" ;;
 esac

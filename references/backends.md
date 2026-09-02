@@ -12,6 +12,9 @@
 | codex | `codex exec` | `gpt-5.6-sol` (`CODEX_MODEL`) | `-c model_reasoning_effort="xhigh"` | `--json` JSONL + `-o` последнее сообщение | `thread_id` из события `thread.started` → `codex exec resume` |
 | kimi-cli | `kimi -p` (OAuth) | `kimi-code/k3` (`KIMI_CLI_MODEL`) | из config.toml (`effort = "high"|"max"`) | stream-json (строки без `type`) | `session_id` из `session.resume_hint` → `-S` |
 
+Модели и effort по умолчанию — в `bin/lib/defaults.sh`; переопределение — `review config set KEY VALUE`
+(файл `~/.config/external-review/config.env`) или переменная окружения на один запуск.
+
 Изоляция у всех одна: detached git worktree на временный коммит с рабочим деревом
 (незакоммиченное и untracked включены, .gitignore соблюдён). Снапшот writable — рецензент
 может гонять тесты и править ради воспроизведения. Дополнительно там, где CLI умеет:

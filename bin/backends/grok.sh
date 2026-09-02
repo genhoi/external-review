@@ -11,7 +11,7 @@ case "$1" in
   run)
     sid="$(cat "$ER_DIR/session")"
     exec "$GROK_BIN" --prompt-file "$ER_PROMPT" --cwd "$ER_SNAPSHOT" \
-      --model "${GROK_MODEL:-grok-4.6}" --effort "${GROK_EFFORT:-xhigh}" \
+      --model "$GROK_MODEL" --effort "$GROK_EFFORT" \
       --sandbox "$(grok_sandbox)" --permission-mode bypassPermissions \
       --output-format streaming-messages-json -s "$sid" ;;
   ask)
@@ -22,6 +22,6 @@ case "$1" in
   check)
     command -v "$GROK_BIN" >/dev/null || { echo "нет бинаря grok"; exit 1; }
     [ -s "$HOME/.grok/auth.json" ] || { echo "нет авторизации grok (запусти grok и войди)"; exit 1; }
-    echo "ok — ${GROK_MODEL:-grok-4.6}, effort ${GROK_EFFORT:-xhigh}" ;;
+    echo "ok — $GROK_MODEL, effort $GROK_EFFORT" ;;
   *) die "grok backend: неизвестная команда $1" ;;
 esac

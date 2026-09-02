@@ -23,6 +23,7 @@ description: Use when the user asks for a second opinion on code or a plan from 
 | Команда | Что делает |
 |---|---|
 | `$R doctor` | кто из рецензентов доступен и чего не хватает |
+| `$R config [set KEY VALUE]` | какие модели и effort действуют; смена без правки скилла |
 | `$R brief --out brief.md` | шаблон вводной |
 | `$R run --brief brief.md [--mode diff\|repo\|plan] [--base REF] [--reviewers auto\|glm,grok,...] [--lens correctness\|security\|ops\|tests] [--blind] [--plan FILE]` | снапшот + запуск рецензентов в фоне; печатает каталог прогона |
 | `$R status RUN` / `$R wait RUN` | прогресс / ожидание: `wait` возвращается не позже чем через 110 с (exit 3 = ещё работают, вызови снова; exit 0 = все готовы) |

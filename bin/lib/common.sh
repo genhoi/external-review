@@ -8,6 +8,7 @@ ER_CFG="$ER_HOME/cfg"          # изолированные CLAUDE_CONFIG_DIR д
 ER_DEFAULT_TIMEOUT="${EXTERNAL_REVIEW_TIMEOUT:-2700}"   # 45 минут на рецензента
 ER_DEFAULT_LINKS="vendor node_modules .venv .env .env.local .env.test"
 ER_ALL_BACKENDS="glm kimi kimi-cli grok codex opus"
+source "$ER_SKILL_DIR/bin/lib/defaults.sh"
 
 die()  { printf 'review: %s\n' "$*" >&2; exit 1; }
 warn() { printf 'review: %s\n' "$*" >&2; }

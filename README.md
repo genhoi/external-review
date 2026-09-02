@@ -39,6 +39,8 @@ $R collect                         # merged.md: таблица находок ×
 | codex | codex CLI, `codex exec`, `gpt-5.6-sol`, effort xhigh, sandbox workspace-write | подписка ChatGPT |
 | kimi-cli | kimi-code CLI (OAuth) | запасной путь |
 
+Смена модели без правки скилла: `review config set CODEX_MODEL gpt-5.7-sol` (файл `~/.config/external-review/config.env`).
+
 ## Как это устроено
 
 - **Снапшот**: detached git worktree на временный коммит с рабочим деревом (включая

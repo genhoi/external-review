@@ -39,13 +39,28 @@ ln -sfn ~/.claude/skills/external-review ~/.grok/skills/external-review     # gr
 - `sudo apt install -y bubblewrap` — включает kernel-sandbox для grok (`--sandbox workspace`).
 - Для Kimi через kimi-cli с максимальным effort: в `~/.kimi-code/config.toml` `[thinking] effort = "max"`.
 
+## Смена модели или effort
+
+Дефолты лежат в одном месте — `bin/lib/defaults.sh`. Менять сам скилл не нужно:
+```bash
+review config                                # эффективные значения и путь к файлу переопределений
+review config set CODEX_MODEL gpt-5.7-sol    # навсегда: ~/.config/external-review/config.env
+CODEX_MODEL=gpt-5.7-sol review run ...       # на один запуск
+```
+Приоритет: переменная окружения → `config.env` → дефолт скилла. Файл переживает `git pull`
+скилла. Где смотреть новые id: codex — `/model` в TUI или `~/.codex/config.toml` после выбора;
+z.ai и Kimi — их доки по Claude Code (суффикс `[1m]` только через Claude Code); grok — `grok --help`
+и `~/.grok/models_cache.json`; claude — алиасы `opus`/`sonnet`/`fable` всегда указывают на последнюю.
+После смены модели прогони фикстур (`tests/README.md`) — это быстрый способ увидеть, что новая
+модель не галлюцинирует и держит протокол.
+
 ## Переменные окружения
 
 | Переменная | По умолчанию | Назначение |
 |---|---|---|
 | `EXTERNAL_REVIEW_HOME` | `~/.local/state/external-review` | прогоны, снапшоты, config dir'ы |
 | `EXTERNAL_REVIEW_TIMEOUT` | `2700` | секунд на рецензента |
-| `GLM_MODEL` / `KIMI_MODEL` / `OPUS_MODEL` / `GROK_MODEL` / `CODEX_MODEL` / `KIMI_CLI_MODEL` | см. backends.md | модель рецензента |
+| `GLM_MODEL` / `KIMI_MODEL` / `OPUS_MODEL` / `GROK_MODEL` / `CODEX_MODEL` / `KIMI_CLI_MODEL` | `review config` | модель рецензента (лучше через `review config set`) |
 | `GROK_EFFORT` / `CODEX_EFFORT` | `xhigh` | effort |
 | `GROK_SANDBOX` | `workspace` при наличии bwrap, иначе `off` | профиль sandbox grok |
 | `CODEX_NO_SANDBOX` | — | `1` → без sandbox codex (если не стартует в этом окружении) |

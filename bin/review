@@ -9,6 +9,7 @@ usage() {
 review — внешнее ревью кода другими моделями
 
   review doctor                         какие рецензенты доступны и чего не хватает
+  review config [set KEY VALUE]         эффективные модели/effort и файл переопределений
   review brief [--out FILE]             шаблон вводной (заполнить перед run)
   review run --brief FILE [опции]       запустить рецензентов в фоне; печатает каталог прогона
       --reviewers auto|glm,kimi,grok,codex,opus,kimi-cli   (auto = все, кто проходит doctor)
@@ -47,6 +48,22 @@ available_backends() {
     [ "$b" = "kimi-cli" ] && continue   # запасной путь; явно через --reviewers
     bash "$ER_SKILL_DIR/bin/backends/$b.sh" check >/dev/null 2>&1 && echo "$b"
   done
+}
+
+cmd_config() {
+  if [ "${1:-}" = "set" ]; then
+    [ $# -eq 3 ] || die "config set KEY VALUE"
+    case " $ER_CONFIG_KEYS " in *" $2 "*) ;; *) die "неизвестный ключ $2; допустимые: $ER_CONFIG_KEYS";; esac
+    mkdir -p "$(dirname "$ER_CONFIG_FILE")"; touch "$ER_CONFIG_FILE"
+    grep -vE "^\s*$2=" "$ER_CONFIG_FILE" > "$ER_CONFIG_FILE.tmp" || true
+    printf '%s=%s\n' "$2" "$3" >> "$ER_CONFIG_FILE.tmp"; mv "$ER_CONFIG_FILE.tmp" "$ER_CONFIG_FILE"
+    echo "записано в $ER_CONFIG_FILE: $2=$3"; return
+  fi
+  echo "файл переопределений: $ER_CONFIG_FILE $([ -f "$ER_CONFIG_FILE" ] && echo '(есть)' || echo '(нет — действуют дефолты скилла)')"
+  echo "приоритет: переменная окружения → файл → дефолт из bin/lib/defaults.sh"
+  local k
+  for k in $ER_CONFIG_KEYS; do printf '  %-16s %s\n' "$k" "${!k}"; done
+  echo "изменить: review config set CODEX_MODEL gpt-5.7-sol   (или export CODEX_MODEL=... на один запуск)"
 }
 
 cmd_brief() {
@@ -244,6 +261,7 @@ cmd_clean() {
 
 case "${1:-}" in
   doctor) shift; cmd_doctor "$@";;
+  config) shift; cmd_config "$@";;
   brief) shift; cmd_brief "$@";;
   run) shift; cmd_run "$@";;
   status) shift; cmd_status "$@";;
