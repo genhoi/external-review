@@ -23,7 +23,7 @@ review — внешнее ревью кода другими моделями
                                         по умолчанию vendor node_modules .venv .env .env.local .env.test)
       --effort LEVEL                    effort для claude-семейства (по умолчанию max)
   review status [RUN]                   прогресс (RUN — путь или имя; по умолчанию последний)
-  review wait [RUN] [--interval SEC]    ждать завершения всех рецензентов
+  review wait [RUN] [--max SEC]         ждать; возвращается ≤110 c: exit 0 — все готовы, exit 3 — вызови снова
   review collect [RUN]                  собрать merged.md (сводная таблица + полные отчёты)
   review ask RUN REVIEWER "вопрос"      продолжить сессию рецензента (контраргумент, уточнение)
   review logs RUN REVIEWER              хвост stderr и прогресс
@@ -184,16 +184,21 @@ cmd_status() {
 }
 
 cmd_wait() {
-  local run="" interval=30
-  while [ $# -gt 0 ]; do case "$1" in --interval) interval="$2"; shift 2;; *) run="$1"; shift;; esac; done
+  # Возвращается не позже чем через --max секунд (по умолчанию 110: меньше 2-минутного таймаута
+  # Bash-инструмента в Claude Code и подобных): exit 0 — все завершены, exit 3 — ещё работают, вызови снова.
+  local run="" interval=15 max="${EXTERNAL_REVIEW_WAIT_MAX:-110}"
+  while [ $# -gt 0 ]; do case "$1" in --interval) interval="$2"; shift 2;; --max) max="$2"; shift 2;; *) run="$1"; shift;; esac; done
   run="$(resolve_run "$run")"
+  local t0; t0=$(date +%s)
   while :; do
-    local busy=0 r
-    for r in $(run_reviewers "$run"); do case "$(status_of "$run" "$r")" in queued|running) busy=1;; esac; done
-    [ $busy -eq 1 ] || break
+    local busy="" r
+    for r in $(run_reviewers "$run"); do case "$(status_of "$run" "$r")" in queued|running) busy="$busy $r";; esac; done
+    if [ -z "$busy" ]; then cmd_status "$run"; echo "все рецензенты завершены: review collect $run"; return 0; fi
+    if [ $(( $(date +%s) - t0 )) -ge "$max" ]; then
+      cmd_status "$run"; echo "ещё работают:$busy — вызови review wait $run снова (ждать в headless нельзя иначе)"; return 3
+    fi
     sleep "$interval"
   done
-  cmd_status "$run"
 }
 
 cmd_collect() {
