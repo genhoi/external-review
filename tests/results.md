@@ -1,40 +1,40 @@
-# Результаты прогонов на фикстуре
+# Fixture run results
 
-Фикстур: `make-fixture.sh`, ветка `feature/webhook-retries` относительно `main`, вводная
-`fixture-brief.md`, протокол `prompts/reviewer.md`. Дефекты A–D и приманка — см. `README.md`.
+Fixture: `make-fixture.sh`, branch `feature/webhook-retries` against `main`, brief
+`fixture-brief.md`, protocol `prompts/reviewer.md`. Defects A–D and the decoy — see `README.md`.
 
-## 02.09.2026 — новый протокол (один прогон, все рецензенты параллельно)
+## 2026-09-02 — new protocol (one run, all reviewers in parallel)
 
-| Рецензент | Модель | A дедуп | B таймзона | C пустой тест | D округление | Приманка | Лишнее | Улики | Инстр. | Время | Стоимость (номинал) |
+| Reviewer | Model | A dedup | B timezone | C vacuous test | D rounding | Decoy | Extra | Evidence | Tool calls | Time | Cost (nominal) |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| glm | glm-5.3[1m], effort max | ✓ critical | ✓ major | ✓ major | ✓ major | не тронул | TypeError на aware now (minor, ran); гонка check-then-act (minor, честно `inferred` 55, репро не удалась) | все `ran`, репро-скрипты в снапшоте, фиксы применены и откачены | 31 | 5м22с | $1.02 |
-| opus | claude-opus-5, effort max | ✓ critical | ✓ critical | ✓ major | ✓ major | не тронул | тесты подписки ±30 дней нечувствительны (minor) | все `ran` | 18 | 6м18с | $1.33 |
-| kimi-cli | kimi-code/k3, effort high | ✓ critical | ✓ major | ✓ major | ✓ major | не тронул | `is_active` нигде не вызывается (info, read) — верно | все `ran` | 15 | 6м07с | подписка |
-| grok | grok-4.6, xhigh | ✓ critical | ✓ critical | свернул в улику к A | ✓ major | не тронул | — | все `ran` | 33 | 8м17с | $0.09 |
-| kimi | k3[1m] через Claude Code, effort max | ✓ critical | ✓ major | ✓ major | ✓ major | не тронул | — (отдельно проверил совместимость смены формата ключа дедупликации и отсутствие вызывающих мест) | все `ran` | 19 | 10м05с | $0.84 |
-| codex | gpt-5.6-sol (из config), xhigh | ✓ critical | ✓ major | свернул в A | ✓ critical | не тронул | гонка check-then-act как **critical/95 `ran`** — спорно (glm не воспроизвёл) | все `ran` | 24 | 9м17с | подписка |
+| glm | glm-5.3[1m], effort max | ✓ critical | ✓ major | ✓ major | ✓ major | not flagged | TypeError on aware now (minor, ran); check-then-act race (minor, honestly `inferred` 55, repro failed) | all `ran`, repro scripts in the snapshot, fixes applied and reverted | 31 | 5m22s | $1.02 |
+| opus | claude-opus-5, effort max | ✓ critical | ✓ critical | ✓ major | ✓ major | not flagged | subscription tests at ±30 days are insensitive (minor) | all `ran` | 18 | 6m18s | $1.33 |
+| kimi-cli | kimi-code/k3, effort high | ✓ critical | ✓ major | ✓ major | ✓ major | not flagged | `is_active` is never called (info, read) — correct | all `ran` | 15 | 6m07s | subscription |
+| grok | grok-4.6, xhigh | ✓ critical | ✓ critical | folded into evidence for A | ✓ major | not flagged | — | all `ran` | 33 | 8m17s | $0.09 |
+| kimi | k3[1m] via Claude Code, effort max | ✓ critical | ✓ major | ✓ major | ✓ major | not flagged | — (separately verified compatibility of the dedup key format change and the absence of call sites) | all `ran` | 19 | 10m05s | $0.84 |
+| codex | gpt-5.6-sol (from config), xhigh | ✓ critical | ✓ major | folded into A | ✓ critical | not flagged | check-then-act race as **critical/95 `ran`** — debatable (glm could not reproduce it) | all `ran` | 24 | 9m17s | subscription |
 
-Сводка `review collect`: пять из пяти сошлись на A, B, D; трое отдельно вынесли C; расхождение
-по гонке (codex critical vs glm inferred 55) — типичный кейс для `review ask`.
-Все пять: вердикт «не готово», JSON-блок разобрался, `REVIEW.md` в снапшоте записан.
+`review collect` merged report: five of five agreed on A, B, D; three reported C as a separate finding; the disagreement
+on the race (codex critical vs glm inferred 55) is a typical case for `review ask`.
+All five: verdict "not ready", JSON block parsed, `REVIEW.md` written in the snapshot.
 
-## 02.09.2026 — baseline: старый промпт (без протокола), тот же writable-снапшот
+## 2026-09-02 — baseline: old prompt (no protocol), same writable snapshot
 
-| Рецензент | A | B | C | D | Приманка | Заметки |
+| Reviewer | A | B | C | D | Decoy | Notes |
 |---|---|---|---|---|---|---|
-| glm | ✓ | ✓ | ✓ | ✓ | не тронул | 14 инстр., 3м24с; репро запускал; нет журнала и JSON |
-| grok | ✓ | ✓ | ✓ | ✓ | не тронул | 23 инстр., 4м21с |
-| codex | ✓ | ✓ | ✓ | ✗ | не тронул | 8 инстр., 4м19с; округление пропустил |
+| glm | ✓ | ✓ | ✓ | ✓ | not flagged | 14 tool calls, 3m24s; ran repros; no verification log or JSON |
+| grok | ✓ | ✓ | ✓ | ✓ | not flagged | 23 tool calls, 4m21s |
+| codex | ✓ | ✓ | ✓ | ✗ | not flagged | 8 tool calls, 4m19s; missed the rounding |
 
-Вывод: с подробной вводной и возможностью запускать тесты даже старый промпт даёт сильное
-ревью; протокол добавляет структуру улик (`ran|read|inferred` + confidence), журнал проверки,
-раздел «проверено, в порядке», machine-readable блок для сводки и дублирование в `REVIEW.md`.
-Главный источник «линтерных» отчётов раньше — read-only docker + plan-режим, где рецензент
-не мог ничего запустить.
+Conclusion: with a detailed brief and the ability to run tests, even the old prompt yields a strong
+review; the protocol adds evidence structure (`ran|read|inferred` + confidence), a verification log,
+a "Checked, fine" section, a machine-readable block for the merged report, and a duplicate in `REVIEW.md`.
+The main source of "linter-like" reports before was read-only docker + plan mode, where the reviewer
+could not run anything.
 
-## 02.09.2026 — скилл с позиции оркестратора (та же задача, рецензенты glm + grok)
+## 2026-09-02 — the skill from the orchestrator's side (same task, reviewers glm + grok)
 
-| Оркестратор | Как запущен | Результат |
+| Orchestrator | How launched | Result |
 |---|---|---|
-| Claude (свежий субагент) | Agent tool, только SKILL.md | doctor → полная вводная → run → wait → collect → триаж с собственной репродукцией каждой находки; 22 вызова, 14 мин; отклонённых нет, приманку не поднял |
-| GLM-5.3 headless | `claude -p` через z.ai, обычный `~/.claude` | первая попытка: `wait` убит 2-минутным таймаутом Bash-инструмента, GLM завершил сессию «промежуточным статусом» → исправлено (`wait` возвращается ≤110 с, exit 3). Вторая попытка: `wait` в цикле 8 раз, triage.md, merged.md, проверка репро в снапшоте; 43 вызова, 15 мин, полная таблица вердиктов |
+| Claude (fresh subagent) | Agent tool, SKILL.md only | doctor → full brief → run → wait → collect → triage with its own reproduction of every finding; 22 calls, 14 min; nothing rejected, did not raise the decoy |
+| GLM-5.3 headless | `claude -p` via z.ai, regular `~/.claude` | first attempt: `wait` killed by the Bash tool's 2-minute timeout, GLM ended the session with an "interim status" → fixed (`wait` returns within ≤110 s, exit 3). Second attempt: `wait` in a loop 8 times, triage.md, merged.md, repro check in the snapshot; 43 calls, 15 min, full verdict table |

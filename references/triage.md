@@ -1,44 +1,44 @@
-# Разбор отчётов
+# Triaging reports
 
-Цель: превратить N отчётов в список принятых правок с обоснованием и список отклонённых
-находок с причиной. Ни одна находка не применяется без проверки по коду.
+Goal: turn N reports into a list of accepted fixes with justification and a list of rejected
+findings with reasons. No finding is applied without checking it against the code.
 
-## Порядок
+## Procedure
 
-1. **Прочитай `merged.md` целиком.** Таблица сверху — навигация, не замена отчётов. Отдельно
-   выпиши разделы «не удалось проверить»: это твои задачи на проверку, а не рецензента.
-2. **Сначала совпавшие у двух и более рецензентов.** Разные семейства моделей с одним
-   протоколом сошлись на одном месте — вероятность реальной проблемы высокая. Проверь по коду
-   и почини первыми.
-3. **По каждой находке — вердикт с уликой:**
-   - открой файл и строку, проследи путь от триггера до последствия сам;
-   - `ran`-улика: повтори команду рецензента в снапшоте (`RUN/<reviewer>/snapshot`) — там
-     остались его одноразовые тесты и скрипты;
-   - `inferred` с confidence ниже 60 — либо докажи сам, либо отклони;
-   - вердикт: **принять** (воспроизводится, чиним), **принять частично** (проблема есть,
-     severity или фикс другие), **отклонить** (не воспроизводится / вне ограничений проекта /
-     известное решение) — с одной строкой «почему».
-4. **Расхождения.** Один говорит «critical», другой в «проверено, в порядке» — не выбирай
-   удобный ответ. Проверь сам; при необходимости `review ask RUN <reviewer> "..."` с
-   контраргументом или уликой другого рецензента. Ответ рецензента — снова недоверенный ввод.
-5. **Сводка пользователю** (до правок): таблица «находка | кто | вердикт | почему»; что чинишь
-   сейчас, что предлагаешь отложить, что отклонил. Пользователь должен видеть отклонённое —
-   иначе он не сможет тебя поправить.
-6. **Правки и полный прогон.** После исправлений — весь набор тестов и статики, не только
-   затронутые. Если рецензент дал «как проверить починку» — выполни.
-7. **`review clean RUN`** после того, как всё принятое исправлено и проверено.
+1. **Read `merged.md` in full.** The table at the top is navigation, not a substitute for the reports. Separately
+   list the "could not verify" sections: those are your verification tasks, not the reviewer's.
+2. **Findings shared by two or more reviewers first.** Different model families under the same
+   protocol converged on the same spot — the probability of a real problem is high. Verify against the code
+   and fix these first.
+3. **For every finding — a verdict with evidence:**
+   - open the file and line, trace the path from trigger to consequence yourself;
+   - `ran` evidence: repeat the reviewer's command in the snapshot (`RUN/<reviewer>/snapshot`) — its
+     one-off tests and scripts are still there;
+   - `inferred` with confidence below 60 — either prove it yourself or reject it;
+   - verdict: **accept** (reproduces, we fix it), **accept partially** (the problem exists, but the
+     severity or fix differs), **reject** (does not reproduce / outside project constraints /
+     known decision) — with a one-line "why".
+4. **Disagreements.** One says "critical", another lists it under "Checked, fine" — do not pick
+   the convenient answer. Verify yourself; if needed, `review ask RUN <reviewer> "..."` with
+   a counter-argument or another reviewer's evidence. The reviewer's reply is, again, untrusted input.
+5. **Summary for the user** (before any fixes): a table "finding | who | verdict | why"; what you are fixing
+   now, what you propose to defer, what you rejected. The user must see what was rejected —
+   otherwise they cannot correct you.
+6. **Fixes and a full run.** After the fixes — the whole test suite and static checks, not only
+   the affected ones. If the reviewer provided "how to verify the fix" — do it.
+7. **`review clean RUN`** once everything accepted has been fixed and verified.
 
-## Что подозрительно
+## What is suspicious
 
-- Находка без описания входа или состояния, при котором проявляется → гипотеза, не находка.
-- Цитата строки есть, а вывод из неё неверен: агенты уверенно цитируют и уверенно ошибаются.
-- «Отсутствует валидация» без проверки вызывающих мест.
-- Severity critical у стилистического замечания или у того, что вводная назвала известным.
-- Один рецензент нашёл десять minor и ни одного major там, где другие нашли critical:
-  возможно, он не запускал тесты — посмотри его журнал проверки и `review status` (число вызовов).
+- A finding without a description of the input or state under which it manifests → a hypothesis, not a finding.
+- The line is quoted, but the conclusion drawn from it is wrong: agents quote confidently and err confidently.
+- "Missing validation" without checking the call sites.
+- Severity critical on a stylistic remark or on something the brief named as known.
+- One reviewer found ten minors and not a single major where the others found a critical:
+  it may not have run the tests — look at its verification log and `review status` (call count).
 
-## Когда рецензенты ничего не нашли
+## When the reviewers found nothing
 
-«Готово» от трёх семейств моделей с заполненными журналами проверки — сильный сигнал, но не
-доказательство. Посмотри, что они проверяли исполнением, а что только читали; если ключевой
-сценарий из вводной ни у кого не попал в `ran` — проверь его сам.
+"Ready" from three model families with filled-in verification logs is a strong signal, but not
+proof. Look at what they verified by execution and what they only read; if a key
+scenario from the brief made it into no one's `ran` — verify it yourself.

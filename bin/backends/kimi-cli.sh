@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Kimi K3 через родной kimi-code CLI (OAuth). Запасной путь: OAuth протухает раз в несколько дней.
+# Kimi K3 via the native kimi-code CLI (OAuth). Fallback path: the OAuth token expires every few days.
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 KIMI_BIN="${KIMI_BIN:-$HOME/.kimi-code/bin/kimi}"; command -v kimi >/dev/null && KIMI_BIN="${KIMI_BIN:-kimi}"
 case "$1" in
@@ -8,13 +8,13 @@ case "$1" in
     exec "$KIMI_BIN" -p "$(cat "$ER_PROMPT")" --output-format stream-json -m "$KIMI_CLI_MODEL" ;;
   ask)
     sid="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("session_id") or "")' "$ER_DIR/meta.json")"
-    [ -n "$sid" ] || die "kimi-cli: session id не найден в meta.json"
+    [ -n "$sid" ] || die "kimi-cli: session id not found in meta.json"
     cd "$ER_SNAPSHOT"
     exec "$KIMI_BIN" -S "$sid" -p "$2" --output-format text ;;
   format) echo kimi-stream-json ;;
   check)
-    [ -x "$KIMI_BIN" ] || { echo "нет бинаря kimi (~/.kimi-code/bin/kimi)"; exit 1; }
-    [ -n "$(ls -A "$HOME/.kimi-code/credentials" 2>/dev/null)" ] || { echo "нет OAuth-кредов kimi (kimi login)"; exit 1; }
+    [ -x "$KIMI_BIN" ] || { echo "kimi binary not found (~/.kimi-code/bin/kimi)"; exit 1; }
+    [ -n "$(ls -A "$HOME/.kimi-code/credentials" 2>/dev/null)" ] || { echo "no kimi OAuth credentials (kimi login)"; exit 1; }
     echo "ok — $KIMI_CLI_MODEL (OAuth)" ;;
-  *) die "kimi-cli backend: неизвестная команда $1" ;;
+  *) die "kimi-cli backend: unknown command $1" ;;
 esac

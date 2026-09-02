@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Разбор вывода разных CLI, сборка промпта и сводного отчёта.
+"""Parse the output of different CLIs, assemble the prompt, build the merged report.
 
-    extract.py report   FORMAT RAW        # финальный текст отчёта рецензента
+    extract.py report   FORMAT RAW        # final report text of a reviewer
     extract.py meta     FORMAT RAW        # JSON: session_id, turns, tool_calls, cost_usd, duration_ms
-    extract.py progress FORMAT RAW        # одна строка прогресса для `review status`
+    extract.py progress FORMAT RAW        # one progress line for `review status`
     extract.py assemble --header H --protocol P --brief B [--lens L]... [--blind]
-    extract.py merge    RUN_DIR           # merged.md в stdout
+    extract.py merge    RUN_DIR           # merged.md to stdout
 
 FORMAT: claude-stream-json | codex-jsonl | grok-messages | kimi-stream-json | text
-Только стандартная библиотека.
+Standard library only.
 """
 import json
 import os
@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 
-# ---------- чтение сырых логов ----------
+# ---------- raw log parsing ----------
 
 def _lines(path):
     with open(path, encoding="utf-8", errors="replace") as fh:
@@ -53,9 +53,9 @@ def _tool_label(name, inp):
 
 class Parsed:
     def __init__(self):
-        self.texts = []        # тексты ассистента по порядку
-        self.final = None      # явный финальный result, если формат его даёт
-        self.tools = []        # метки вызовов инструментов по порядку
+        self.texts = []        # assistant texts in order
+        self.final = None      # explicit final result when the format provides one
+        self.tools = []        # tool-call labels in order
         self.session_id = None
         self.turns = None
         self.cost = None
@@ -66,7 +66,7 @@ class Parsed:
     def report(self):
         if self.final and self.final.strip():
             return self.final.strip()
-        # иначе — последний непустой текст ассистента (отчёт часто идёт последним)
+        # otherwise the last non-empty assistant text (the report is usually last)
         for t in reversed(self.texts):
             if t.strip():
                 return t.strip()
@@ -131,7 +131,7 @@ def parse_codex(path):
             p.turns = (p.turns or 0) + 1
         elif t in ("error", "turn.failed"):
             p.errors.append(json.dumps(ev)[:300])
-    # -o файл с последним сообщением надёжнее, если есть
+    # the -o file with the last message is more reliable when present
     last = Path(path).with_name("last_message.md")
     if last.exists() and last.read_text(encoding="utf-8", errors="replace").strip():
         p.final = last.read_text(encoding="utf-8", errors="replace")
@@ -139,7 +139,7 @@ def parse_codex(path):
 
 
 def parse_grok_messages(path):
-    """NDJSON в формате Anthropic Messages (стрим): собираем текст по сообщениям."""
+    """NDJSON in Anthropic Messages wire format (stream): collect text per message."""
     p = Parsed()
     cur_text, cur_tool = [], None
     for ev in _lines(path):
@@ -165,7 +165,7 @@ def parse_grok_messages(path):
             if txt.strip():
                 p.texts.append(txt)
             p.turns = (p.turns or 0) + 1
-        elif t == "message":  # цельные сообщения без стрима
+        elif t == "message":  # whole messages without streaming
             m = ev.get("message", ev)
             if m.get("role") == "assistant":
                 txt = _blocks_text(m.get("content"))
@@ -182,8 +182,8 @@ def parse_grok_messages(path):
 
 
 def parse_kimi(path):
-    """kimi --output-format stream-json: строки вида {"role":"assistant","content":"...","tool_calls":[...]}
-    и мета-события {"role":"meta","type":"session.resume_hint","session_id":...}."""
+    """kimi --output-format stream-json: lines like {"role":"assistant","content":"...","tool_calls":[...]}
+    plus meta events {"role":"meta","type":"session.resume_hint","session_id":...}."""
     p = Parsed()
     for ev in _lines(path):
         t = ev.get("type", "")
@@ -227,19 +227,19 @@ PARSERS = {
 
 def parse(fmt, path):
     if fmt not in PARSERS:
-        sys.exit(f"extract.py: неизвестный формат {fmt}")
+        sys.exit(f"extract.py: unknown format {fmt}")
     if not os.path.exists(path):
         return Parsed()
     return PARSERS[fmt](path)
 
 
-# ---------- сборка промпта ----------
+# ---------- prompt assembly ----------
 
 BLIND_HEADERS = ("интент", "intent", "сознательн", "известные решения", "known decisions")
 
 
 def strip_blind(brief):
-    """Убирает из вводной разделы с интентом и сознательными решениями (для слепого рецензента)."""
+    """Strip the intent and known-decisions sections from the brief (for a blind reviewer)."""
     out, skip = [], False
     for line in brief.splitlines():
         if re.match(r"^#{1,6}\s", line):
@@ -262,10 +262,10 @@ def assemble(args):
     return "\n".join(parts)
 
 
-# ---------- findings и сводка ----------
+# ---------- findings and merged report ----------
 
 def findings_from_report(text):
-    """Последний ```json-блок отчёта → dict (или {})."""
+    """Last ```json block of the report → dict (or {})."""
     blocks = re.findall(r"```json\s*\n(.*?)\n```", text, flags=re.S)
     for raw in reversed(blocks):
         try:
@@ -288,11 +288,11 @@ def merge(run_dir):
     run = Path(run_dir)
     meta_run = json.loads((run / "meta.json").read_text()) if (run / "meta.json").exists() else {}
     reviewers = sorted(d.name for d in run.iterdir() if d.is_dir() and (d / "status").exists())
-    out = [f"# Сводка внешнего ревью — {meta_run.get('project', run.name)}", ""]
-    out.append(f"Прогон: `{run}`  ")
-    out.append(f"Режим: {meta_run.get('mode')} · base: `{meta_run.get('base')}` · снапшот: `{meta_run.get('snapshot_commit', '')[:12]}`  ")
+    out = [f"# External review — merged report — {meta_run.get('project', run.name)}", ""]
+    out.append(f"Run: `{run}`  ")
+    out.append(f"Mode: {meta_run.get('mode')} · base: `{meta_run.get('base')}` · snapshot: `{meta_run.get('snapshot_commit', '')[:12]}` · lang: {meta_run.get('lang', '?')}  ")
     out.append("")
-    out.append("| Рецензент | Статус | Ходы | Инструменты | Длительность | Стоимость | Изменил файлов в снапшоте |")
+    out.append("| Reviewer | Status | Turns | Tool calls | Duration | Cost | Files changed in snapshot |")
     out.append("|---|---|---|---|---|---|---|")
     all_findings = []
     reports = {}
@@ -308,7 +308,7 @@ def merge(run_dir):
             a = datetime.strptime((d / "started").read_text().strip(), fmt)
             b = datetime.strptime((d / "finished").read_text().strip(), fmt)
             dur = int((b - a).total_seconds() * 1000)
-        dur_s = f"{dur // 60000}м {dur % 60000 // 1000}с" if dur else "—"
+        dur_s = f"{dur // 60000}m {dur % 60000 // 1000}s" if dur else "—"
         cost = f"${m['cost_usd']:.2f}" if isinstance(m.get("cost_usd"), (int, float)) else "—"
         out.append(f"| {r} | {st} | {m.get('turns') or '—'} | {m.get('tool_calls') or '—'} | {dur_s} | {cost} | {len(changes)} |")
         if (d / "report.md").exists():
@@ -322,7 +322,7 @@ def merge(run_dir):
                     all_findings.append(f)
     out.append("")
 
-    # группировка: тот же файл и строка в пределах ±15
+    # grouping: same file and line within ±15
     groups = []
     for f in sorted(all_findings, key=lambda x: (SEV_ORDER.get(str(x.get("severity", "")).lower(), 9), _norm_file(x.get("file")))):
         placed = False
@@ -340,9 +340,9 @@ def merge(run_dir):
         if not placed:
             groups.append([f])
 
-    out.append("## Находки (сгруппированы по файлу и строке; сначала совпавшие у нескольких рецензентов)")
+    out.append("## Findings (grouped by file and line; those flagged by several reviewers first)")
     out.append("")
-    out.append("| # | Sev | Кто | Файл:строка | Суть | Улика | Мой вердикт |")
+    out.append("| # | Sev | Who | File:line | Summary | Evidence | My verdict |")
     out.append("|---|---|---|---|---|---|---|")
     groups.sort(key=lambda g: (-len(g), SEV_ORDER.get(str(g[0].get("severity", "")).lower(), 9)))
     for i, g in enumerate(groups, 1):
@@ -354,21 +354,21 @@ def merge(run_dir):
         ev = "/".join(sorted({str(x.get("evidence", "?")) for x in g}))
         out.append(f"| {i} | {sev} | {who} | `{loc}` | {title} | {ev} | |")
     if not groups:
-        out.append("| — | — | — | — | JSON-блок с findings не найден ни в одном отчёте: разбирай отчёты вручную | — | |")
+        out.append("| — | — | — | — | no JSON findings block in any report: read the reports manually | — | |")
     out.append("")
     for r in reviewers:
         d = run / r
         data = findings_from_report(reports.get(r, ""))
         if data.get("verdict"):
-            out.append(f"**Вердикт {r}:** {data['verdict']}  ")
+            out.append(f"**Verdict ({r}):** {data['verdict']}  ")
     out.append("")
-    out.append("## Полные отчёты")
+    out.append("## Full reports")
     for r in reviewers:
         out += ["", f"### {r}", ""]
         if r in reports:
             out.append(reports[r])
         else:
-            out.append(f"_отчёта нет (статус: {(run / r / 'status').read_text().strip()}); см. {run / r / 'stderr.log'}_")
+            out.append(f"_no report (status: {(run / r / 'status').read_text().strip()}); see {run / r / 'stderr.log'}_")
     return "\n".join(out) + "\n"
 
 
@@ -387,7 +387,7 @@ def main(argv):
         last = p.tools[-1] if p.tools else "—"
         snippet = (p.texts[-1].strip().splitlines() or [""])[-1][:70] if p.texts else ""
         err = f" ERR: {p.errors[-1][:80]}" if p.errors else ""
-        print(f"{len(p.tools)} вызовов инструментов; последний: {last}; текст: {snippet}{err}")
+        print(f"{len(p.tools)} tool calls; last: {last}; text: {snippet}{err}")
     elif cmd == "assemble":
         import argparse
         ap = argparse.ArgumentParser()
@@ -399,7 +399,7 @@ def main(argv):
     elif cmd == "findings":
         print(json.dumps(findings_from_report(Path(rest[0]).read_text(encoding="utf-8")), ensure_ascii=False, indent=1))
     else:
-        sys.exit(f"extract.py: неизвестная команда {cmd}")
+        sys.exit(f"extract.py: unknown command {cmd}")
 
 
 if __name__ == "__main__":

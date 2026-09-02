@@ -1,71 +1,72 @@
-# Установка и ключи
+# Installation and keys
 
-Скилл — каталог `external-review/`. Скрипты требуют только `bash`, `git`, `python3` (3.10+),
-`timeout` (coreutils). Рецензенты — по желанию, работает и с одним; чем больше семейств
-моделей, тем полезнее пересечение отчётов.
+The skill is the `external-review/` directory. The scripts require only `bash`, `git`, `python3` (3.10+),
+`timeout` (coreutils). Reviewers are optional — it works with just one; the more model
+families, the more useful the overlap between reports.
 
-## 1. Положить скилл
+## 1. Install the skill
 
 ```bash
 git clone https://github.com/genhoi/external-review ~/.claude/skills/external-review
 ```
-Чтобы тот же скилл видели другие агенты-оркестраторы:
+So that other orchestrator agents see the same skill:
 ```bash
 mkdir -p ~/.agents/skills ~/.grok/skills
 ln -sfn ~/.claude/skills/external-review ~/.agents/skills/external-review   # kimi, codex, gemini, copilot
 ln -sfn ~/.claude/skills/external-review ~/.grok/skills/external-review     # grok
 ```
-Удобный алиас: `ln -sfn ~/.claude/skills/external-review/bin/review ~/.local/bin/external-review`.
+A convenient alias: `ln -sfn ~/.claude/skills/external-review/bin/review ~/.local/bin/external-review`.
 
-## 2. Ключи и логины рецензентов
+## 2. Reviewer keys and logins
 
-| Рецензент | Что нужно | Где взять |
+| Reviewer | What is needed | Where to get it |
 |---|---|---|
-| glm | `~/.claude/zai_api_key` (одна строка) или `ZAI_API_KEY` | z.ai, GLM Coding Plan |
-| kimi | `~/.claude/kimi_api_key` или `KIMI_API_KEY` | kimi.com/code/console → Create API Key (подписка Kimi Code) |
-| opus | обычный логин Claude Code (`claude auth login`) | подписка Claude |
-| grok | grok CLI + вход через OAuth (`grok`, затем `/login`) | подписка xAI |
-| codex | codex CLI + `codex login` или `codex login --device-auth` | подписка ChatGPT Plus/Pro |
-| kimi-cli | kimi-code CLI + `kimi login` | подписка Kimi Code (OAuth протухает — это запасной путь) |
+| glm | `~/.claude/zai_api_key` (single line) or `ZAI_API_KEY` | z.ai, GLM Coding Plan |
+| kimi | `~/.claude/kimi_api_key` or `KIMI_API_KEY` | kimi.com/code/console → Create API Key (Kimi Code subscription) |
+| opus | regular Claude Code login (`claude auth login`) | Claude subscription |
+| grok | grok CLI + OAuth login (`grok`, then `/login`) | xAI subscription |
+| codex | codex CLI + `codex login` or `codex login --device-auth` | ChatGPT Plus/Pro subscription |
+| kimi-cli | kimi-code CLI + `kimi login` | Kimi Code subscription (OAuth expires — this is the fallback path) |
 
-Файлы ключей: `printf '%s' 'КЛЮЧ' > ~/.claude/kimi_api_key && chmod 600 ~/.claude/kimi_api_key`.
+Key files: `printf '%s' 'KEY' > ~/.claude/kimi_api_key && chmod 600 ~/.claude/kimi_api_key`.
 
-Установка CLI без node: `claude` — официальный установщик Anthropic; `codex` —
-`curl -fsSL https://chatgpt.com/codex/install.sh | sh` (ставит бинарь в `~/.local/bin`);
-`grok` и `kimi` — их установщики. Проверка: `bin/review doctor`.
+Installing the CLIs without node: `claude` — Anthropic's official installer; `codex` —
+`curl -fsSL https://chatgpt.com/codex/install.sh | sh` (puts the binary in `~/.local/bin`);
+`grok` and `kimi` — their own installers. Check: `bin/review doctor`.
 
-## 3. Опционально
+## 3. Optional
 
-- `sudo apt install -y bubblewrap` — включает kernel-sandbox для grok (`--sandbox workspace`).
-- Для Kimi через kimi-cli с максимальным effort: в `~/.kimi-code/config.toml` `[thinking] effort = "max"`.
+- `sudo apt install -y bubblewrap` — enables the kernel sandbox for grok (`--sandbox workspace`).
+- For Kimi via kimi-cli with maximum effort: `[thinking] effort = "max"` in `~/.kimi-code/config.toml`.
 
-## Смена модели или effort
+## Changing the model or effort
 
-Дефолты лежат в одном месте — `bin/lib/defaults.sh`. Менять сам скилл не нужно:
+Defaults live in one place — `bin/lib/defaults.sh`. There is no need to modify the skill itself:
 ```bash
-review config                                # эффективные значения и путь к файлу переопределений
-review config set CODEX_MODEL gpt-5.7-sol    # навсегда: ~/.config/external-review/config.env
-CODEX_MODEL=gpt-5.7-sol review run ...       # на один запуск
+review config                                # effective values and the path to the overrides file
+review config set CODEX_MODEL gpt-5.7-sol    # permanent: ~/.config/external-review/config.env
+CODEX_MODEL=gpt-5.7-sol review run ...       # for a single run
 ```
-Приоритет: переменная окружения → `config.env` → дефолт скилла. Файл переживает `git pull`
-скилла. Где смотреть новые id: codex — `/model` в TUI или `~/.codex/config.toml` после выбора;
-z.ai и Kimi — их доки по Claude Code (суффикс `[1m]` только через Claude Code); grok — `grok --help`
-и `~/.grok/models_cache.json`; claude — алиасы `opus`/`sonnet`/`fable` всегда указывают на последнюю.
-После смены модели прогони фикстур (`tests/README.md`) — это быстрый способ увидеть, что новая
-модель не галлюцинирует и держит протокол.
+Precedence: environment variable → `config.env` → skill default. The file survives a `git pull`
+of the skill. Where to find new ids: codex — `/model` in the TUI or `~/.codex/config.toml` after selecting one;
+z.ai and Kimi — their Claude Code docs (the `[1m]` suffix only through Claude Code); grok — `grok --help`
+and `~/.grok/models_cache.json`; claude — the `opus`/`sonnet`/`fable` aliases always point to the latest.
+After changing a model, run the fixtures (`tests/README.md`) — a quick way to see that the new
+model does not hallucinate and follows the protocol.
 
-## Переменные окружения
+## Environment variables
 
-| Переменная | По умолчанию | Назначение |
+| Variable | Default | Purpose |
 |---|---|---|
-| `EXTERNAL_REVIEW_HOME` | `~/.local/state/external-review` | прогоны, снапшоты, config dir'ы |
-| `EXTERNAL_REVIEW_TIMEOUT` | `2700` | секунд на рецензента |
-| `GLM_MODEL` / `KIMI_MODEL` / `OPUS_MODEL` / `GROK_MODEL` / `CODEX_MODEL` / `KIMI_CLI_MODEL` | `review config` | модель рецензента (лучше через `review config set`) |
+| `REVIEW_LANG` | `en` | language of the protocol and reports: `en` or `ru` (`review config set REVIEW_LANG ru`) |
+| `EXTERNAL_REVIEW_HOME` | `~/.local/state/external-review` | runs, snapshots, config dirs |
+| `EXTERNAL_REVIEW_TIMEOUT` | `2700` | seconds per reviewer |
+| `GLM_MODEL` / `KIMI_MODEL` / `OPUS_MODEL` / `GROK_MODEL` / `CODEX_MODEL` / `KIMI_CLI_MODEL` | `review config` | reviewer model (prefer `review config set`) |
 | `GROK_EFFORT` / `CODEX_EFFORT` | `xhigh` | effort |
-| `GROK_SANDBOX` | `workspace` при наличии bwrap, иначе `off` | профиль sandbox grok |
-| `CODEX_NO_SANDBOX` | — | `1` → без sandbox codex (если не стартует в этом окружении) |
-| `ZAI_BASE_URL` / `KIMI_BASE_URL` | z.ai / api.kimi.com | эндпоинты |
-| `CLAUDE_BIN` / `GROK_BIN` / `CODEX_BIN` / `KIMI_BIN` | из PATH | путь к бинарю |
+| `GROK_SANDBOX` | `workspace` if bwrap is present, otherwise `off` | grok sandbox profile |
+| `CODEX_NO_SANDBOX` | — | `1` → codex without sandbox (if it does not start in this environment) |
+| `ZAI_BASE_URL` / `KIMI_BASE_URL` | z.ai / api.kimi.com | endpoints |
+| `CLAUDE_BIN` / `GROK_BIN` / `CODEX_BIN` / `KIMI_BIN` | from PATH | path to the binary |
 
-`bin/bundle.py` (режим без агента) настраивается через `ZAI_API_KEY`, `ZAI_MODEL`,
-`ZAI_REASONING_EFFORT`, `ZAI_BASE_URL`, `ZAI_MAX_TOKENS` — см. docstring файла.
+`bin/bundle.py` (agentless mode) is configured via `ZAI_API_KEY`, `ZAI_MODEL`,
+`ZAI_REASONING_EFFORT`, `ZAI_BASE_URL`, `ZAI_MAX_TOKENS` — see the file's docstring.

@@ -1,41 +1,47 @@
 #!/usr/bin/env bash
-# external-review: запуск независимых рецензентов (другие модели) над снапшотом репозитория.
-# Работает из любого агента/модели: только bash + git + python3.
+# external-review: run independent reviewers (other model families) over a snapshot of the repository.
+# Harness-agnostic: needs only bash, git and python3.
 set -u
 source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/common.sh"
 
 usage() {
   cat <<'USAGE'
-review — внешнее ревью кода другими моделями
+review — a second opinion on code from other models
 
-  review doctor                         какие рецензенты доступны и чего не хватает
-  review config [set KEY VALUE]         эффективные модели/effort и файл переопределений
-  review brief [--out FILE]             шаблон вводной (заполнить перед run)
-  review run --brief FILE [опции]       запустить рецензентов в фоне; печатает каталог прогона
-      --reviewers auto|glm,kimi,grok,codex,opus,kimi-cli   (auto = все, кто проходит doctor)
-      --mode diff|repo|plan             diff: изменения относительно base (по умолчанию)
-      --base REF                        база для diff (по умолчанию merge-base с main/master)
-      --plan FILE                       документ для режима plan
-      --lens NAME[,NAME]                линза из prompts/lenses (correctness, security, ops, tests)
-      --blind                           убрать из вводной интент и «сознательные решения»
-      --prompt-file FILE                свой промпт вместо протокола+вводной (эксперименты)
-      --timeout SEC                     лимит на рецензента (по умолчанию 2700)
-      --link PATH                       симлинк из рабочего дерева в снапшот (повторяемый;
-                                        по умолчанию vendor node_modules .venv .env .env.local .env.test)
-      --effort LEVEL                    effort для claude-семейства (по умолчанию max)
-  review status [RUN]                   прогресс (RUN — путь или имя; по умолчанию последний)
-  review wait [RUN] [--max SEC]         ждать; возвращается ≤110 c: exit 0 — все готовы, exit 3 — вызови снова
-  review collect [RUN]                  собрать merged.md (сводная таблица + полные отчёты)
-  review ask RUN REVIEWER "вопрос"      продолжить сессию рецензента (контраргумент, уточнение)
-  review logs RUN REVIEWER              хвост stderr и прогресс
-  review runs                           прогоны текущего проекта
-  review clean [RUN|--all]              удалить worktree'ы и каталог прогона
+  review doctor                         which reviewers are available and what is missing
+  review config [set KEY VALUE]         effective models / effort / language and the override file
+  review brief [--out FILE] [--lang L]  brief template (fill it in before run)
+  review run --brief FILE [options]     start reviewers in the background; prints the run directory
+      --reviewers auto|glm,kimi,grok,codex,opus,kimi-cli   (auto = everyone who passes doctor)
+      --mode diff|repo|plan             diff: changes against base (default)
+      --base REF                        base for diff (default: merge-base with main/master)
+      --plan FILE                       document for plan mode
+      --lang en|ru                      language of the protocol and the report (default: REVIEW_LANG)
+      --lens NAME[,NAME]                lens from prompts/<lang>/lenses (correctness, security, ops, tests)
+      --blind                           strip intent and "known decisions" from the brief
+      --prompt-file FILE                your own prompt instead of protocol+brief (experiments)
+      --timeout SEC                     per-reviewer limit (default 2700)
+      --link PATH                       symlink from the working tree into the snapshot (repeatable;
+                                        default: vendor node_modules .venv .env .env.local .env.test)
+      --effort LEVEL                    effort for the claude family (default max)
+  review status [RUN]                   progress (RUN = path or name; default: latest run of this project)
+  review wait [RUN] [--max SEC]         wait; returns within ≤110 s: exit 0 = all done, exit 3 = call again
+  review collect [RUN]                  build merged.md (findings table × reviewer + full reports)
+  review ask RUN REVIEWER "question"    continue a reviewer's session (counter-evidence, clarification)
+  review logs RUN REVIEWER              stderr tail and progress
+  review runs                           runs of the current project
+  review clean [RUN|--all]              remove worktrees and the run directory
 USAGE
+}
+
+lang_dir() { # lang_dir LANG
+  [ -d "$ER_SKILL_DIR/prompts/$1" ] || die "unknown language '$1' (available: $(ls "$ER_SKILL_DIR/prompts" | tr '\n' ' '))"
+  printf '%s' "$ER_SKILL_DIR/prompts/$1"
 }
 
 cmd_doctor() {
   local b out rc
-  printf '%-9s %s\n' "РЕЦЕНЗЕНТ" "СТАТУС"
+  printf '%-9s %s\n' "REVIEWER" "STATUS"
   for b in $ER_ALL_BACKENDS; do
     out="$(bash "$ER_SKILL_DIR/bin/backends/$b.sh" check 2>&1)"; rc=$?
     printf '%-9s %s %s\n' "$b" "$([ $rc -eq 0 ] && echo '✓' || echo '✗')" "$out"
@@ -45,7 +51,7 @@ cmd_doctor() {
 available_backends() {
   local b
   for b in $ER_ALL_BACKENDS; do
-    [ "$b" = "kimi-cli" ] && continue   # запасной путь; явно через --reviewers
+    [ "$b" = "kimi-cli" ] && continue   # fallback path; only via --reviewers
     bash "$ER_SKILL_DIR/bin/backends/$b.sh" check >/dev/null 2>&1 && echo "$b"
   done
 }
@@ -53,115 +59,128 @@ available_backends() {
 cmd_config() {
   if [ "${1:-}" = "set" ]; then
     [ $# -eq 3 ] || die "config set KEY VALUE"
-    case " $ER_CONFIG_KEYS " in *" $2 "*) ;; *) die "неизвестный ключ $2; допустимые: $ER_CONFIG_KEYS";; esac
+    case " $ER_CONFIG_KEYS " in *" $2 "*) ;; *) die "unknown key $2; allowed: $ER_CONFIG_KEYS";; esac
     mkdir -p "$(dirname "$ER_CONFIG_FILE")"; touch "$ER_CONFIG_FILE"
     grep -vE "^\s*$2=" "$ER_CONFIG_FILE" > "$ER_CONFIG_FILE.tmp" || true
     printf '%s=%s\n' "$2" "$3" >> "$ER_CONFIG_FILE.tmp"; mv "$ER_CONFIG_FILE.tmp" "$ER_CONFIG_FILE"
-    echo "записано в $ER_CONFIG_FILE: $2=$3"; return
+    echo "written to $ER_CONFIG_FILE: $2=$3"; return
   fi
-  echo "файл переопределений: $ER_CONFIG_FILE $([ -f "$ER_CONFIG_FILE" ] && echo '(есть)' || echo '(нет — действуют дефолты скилла)')"
-  echo "приоритет: переменная окружения → файл → дефолт из bin/lib/defaults.sh"
+  echo "override file: $ER_CONFIG_FILE $([ -f "$ER_CONFIG_FILE" ] && echo '(exists)' || echo '(absent — skill defaults apply)')"
+  echo "precedence: environment variable → file → default in bin/lib/defaults.sh"
   local k
   for k in $ER_CONFIG_KEYS; do printf '  %-16s %s\n' "$k" "${!k}"; done
-  echo "изменить: review config set CODEX_MODEL gpt-5.7-sol   (или export CODEX_MODEL=... на один запуск)"
+  echo "change: review config set CODEX_MODEL gpt-5.7-sol   (or export CODEX_MODEL=... for one run)"
 }
 
 cmd_brief() {
-  local out=""
-  while [ $# -gt 0 ]; do case "$1" in --out) out="$2"; shift 2;; *) die "brief: неизвестная опция $1";; esac; done
-  if [ -n "$out" ]; then cp "$ER_SKILL_DIR/prompts/brief.md" "$out"; echo "$out"; else cat "$ER_SKILL_DIR/prompts/brief.md"; fi
+  local out="" lang="$REVIEW_LANG"
+  while [ $# -gt 0 ]; do case "$1" in --out) out="$2"; shift 2;; --lang) lang="$2"; shift 2;; *) die "brief: unknown option $1";; esac; done
+  local src; src="$(lang_dir "$lang")/brief.md"
+  if [ -n "$out" ]; then cp "$src" "$out"; echo "$out"; else cat "$src"; fi
 }
 
-write_header() { # write_header RUN MODE BASE HEAD PROJ_ROOT LINKS
-  local run="$1" mode="$2" base="$3" head="$4" root="$5" links="$6"
-  {
-    echo "# Служебная вводная (сгенерирована review run)"
-    echo
-    echo "- Ты работаешь в одноразовом снапшоте репозитория: \`\$PWD\` (detached git worktree на коммит \`${head:0:12}\`)."
-    echo "  Всё, что ты здесь меняешь, никуда не попадает. Можно запускать тесты, писать одноразовые скрипты и тесты, править код ради воспроизведения."
-    echo "- Оригинальное рабочее дерево: \`$root\` — НЕ трогай его и ничего туда не пиши."
-    [ -n "$links" ] && echo "- Симлинки в оригинал (не менять содержимое): $links."
-    echo "- Никаких \`git push\`, коммитов в чужие ветки и сетевых действий с чужими системами."
-    echo "- Режим ревью: **$mode**."
-    case "$mode" in
-      diff)
-        echo "- База сравнения: \`$base\`. Ревьюишь изменения \`git diff $base...HEAD\` (снапшот включает незакоммиченные правки)."
-        echo "- Затронутые файлы:"
-        echo '```'
-        git -C "$run/_snapshot_ref" diff --stat "$base...HEAD" 2>/dev/null | tail -n 60
-        echo '```'
-        echo "- Код вне диффа — контекст: читай столько, сколько нужно, чтобы понять последствия изменений (вызывающие места, миграции, конфиги, тесты)." ;;
-      repo) echo "- Ревью всего репозитория по приоритетам из вводной ниже." ;;
-      plan) echo "- Ревью документа \`plan.md\` (лежит в корне снапшота и вложен в конец промпта). Репозиторий доступен, чтобы проверять допущения плана по реальному коду." ;;
-    esac
-    echo
-  } > "$run/header.md"
+write_header() { # write_header RUN MODE BASE HEAD PROJ_ROOT LINKS LANG
+  local run="$1" mode="$2" base="$3" head="$4" root="$5" links="$6" lang="$7"
+  local stat; stat="$(git -C "$run/_snapshot_ref" diff --stat "$base...HEAD" 2>/dev/null | tail -n 60)"
+  if [ "$lang" = "ru" ]; then
+    {
+      echo "# Служебная вводная (сгенерирована review run)"; echo
+      echo "- Ты работаешь в одноразовом снапшоте репозитория: \`\$PWD\` (detached git worktree на коммит \`${head:0:12}\`)."
+      echo "  Всё, что ты здесь меняешь, никуда не попадает. Можно запускать тесты, писать одноразовые скрипты и тесты, править код ради воспроизведения."
+      echo "- Оригинальное рабочее дерево: \`$root\` — НЕ трогай его и ничего туда не пиши."
+      [ -n "$links" ] && echo "- Симлинки в оригинал (не менять содержимое): $links."
+      echo "- Никаких \`git push\`, коммитов в чужие ветки и сетевых действий с чужими системами."
+      echo "- Режим ревью: **$mode**."
+      case "$mode" in
+        diff) echo "- База сравнения: \`$base\`. Ревьюишь изменения \`git diff $base...HEAD\` (снапшот включает незакоммиченные правки)."
+              echo "- Затронутые файлы:"; echo '```'; echo "$stat"; echo '```'
+              echo "- Код вне диффа — контекст: читай столько, сколько нужно, чтобы понять последствия изменений (вызывающие места, миграции, конфиги, тесты)." ;;
+        repo) echo "- Ревью всего репозитория по приоритетам из вводной ниже." ;;
+        plan) echo "- Ревью документа \`plan.md\` (лежит в корне снапшота и вложен в конец промпта). Репозиторий доступен, чтобы проверять допущения плана по реальному коду." ;;
+      esac; echo
+    } > "$run/header.md"
+  else
+    {
+      echo "# Run context (generated by review run)"; echo
+      echo "- You are working in a disposable snapshot of the repository: \`\$PWD\` (detached git worktree at commit \`${head:0:12}\`)."
+      echo "  Nothing you change here goes anywhere. You may run tests, write throwaway scripts and tests, and modify code to reproduce a hypothesis."
+      echo "- The original working tree is \`$root\` — do NOT touch it and do not write anything there."
+      [ -n "$links" ] && echo "- Symlinks into the original (do not modify their contents): $links."
+      echo "- No \`git push\`, no commits to other branches, no network actions against other systems."
+      echo "- Review mode: **$mode**."
+      case "$mode" in
+        diff) echo "- Base: \`$base\`. You are reviewing \`git diff $base...HEAD\` (the snapshot includes uncommitted changes)."
+              echo "- Files touched:"; echo '```'; echo "$stat"; echo '```'
+              echo "- Code outside the diff is context: read as much as you need to understand the consequences (call sites, migrations, configs, tests)." ;;
+        repo) echo "- Review the whole repository according to the priorities in the brief below." ;;
+        plan) echo "- Review the document \`plan.md\` (in the snapshot root and appended to the end of this prompt). The repository is available to check the plan's assumptions against real code." ;;
+      esac; echo
+    } > "$run/header.md"
+  fi
 }
 
 cmd_run() {
-  local brief="" reviewers="auto" mode="diff" base="" plan="" lens="" blind="" prompt_file="" timeout="$ER_DEFAULT_TIMEOUT" effort="max"
+  local brief="" reviewers="auto" mode="diff" base="" plan="" lens="" blind="" prompt_file="" timeout="$ER_DEFAULT_TIMEOUT" effort="max" lang="$REVIEW_LANG"
   local links="$ER_DEFAULT_LINKS" extra_links=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --brief) brief="$2"; shift 2;; --reviewers) reviewers="$2"; shift 2;; --mode) mode="$2"; shift 2;;
-      --base) base="$2"; shift 2;; --plan) plan="$2"; shift 2;; --lens) lens="$2"; shift 2;;
+      --base) base="$2"; shift 2;; --plan) plan="$2"; shift 2;; --lens) lens="$2"; shift 2;; --lang) lang="$2"; shift 2;;
       --blind) blind=1; shift;; --prompt-file) prompt_file="$2"; shift 2;; --timeout) timeout="$2"; shift 2;;
       --link) extra_links="$extra_links $2"; shift 2;; --effort) effort="$2"; shift 2;;
-      -h|--help) usage; exit 0;; *) die "run: неизвестная опция $1";;
+      -h|--help) usage; exit 0;; *) die "run: unknown option $1";;
     esac
   done
-  [ -n "$brief" ] || [ -n "$prompt_file" ] || die "run: нужен --brief FILE (шаблон: review brief --out brief.md)"
-  [ -z "$brief" ] || [ -f "$brief" ] || die "run: файл вводной не найден: $brief"
+  [ -n "$brief" ] || [ -n "$prompt_file" ] || die "run: --brief FILE is required (template: review brief --out brief.md)"
+  [ -z "$brief" ] || [ -f "$brief" ] || die "run: brief file not found: $brief"
   case "$mode" in diff|repo|plan) ;; *) die "run: --mode diff|repo|plan";; esac
-  [ "$mode" != "plan" ] || [ -f "${plan:-/nonexistent}" ] || die "run: для --mode plan нужен --plan FILE"
+  [ "$mode" != "plan" ] || [ -f "${plan:-/nonexistent}" ] || die "run: --mode plan requires --plan FILE"
+  local pdir; pdir="$(lang_dir "$lang")"
 
-  local root name run head snap_commit
+  local root name run snap_commit
   root="$(proj_root)"; name="$(basename "$root")"
   run="$ER_RUNS/$name-$(date +%Y%m%d-%H%M%S)"; mkdir -p "$run"
-  echo "$root" > "$run/project_root"; echo "$timeout" > "$run/timeout"
+  echo "$root" > "$run/project_root"; echo "$timeout" > "$run/timeout"; echo "$lang" > "$run/lang"
   printf '%s\n' $links $extra_links > "$run/links"
 
   snap_commit="$(snapshot_commit "$root")"
   if [ "$mode" = "diff" ]; then
-    base="$(detect_base "$root" "$base")" || die "run: не нашёл базу (main/master); укажи --base REF"
+    base="$(detect_base "$root" "$base")" || die "run: no base found (main/master); pass --base REF"
     local mb; mb="$(git -C "$root" merge-base "$base" "$snap_commit")"
-    [ "$mb" != "$snap_commit" ] || die "run: между $base и рабочим деревом нет изменений — нечего ревьюить (или --mode repo)"
+    [ "$mb" != "$snap_commit" ] || die "run: no changes between $base and the working tree — nothing to review (or use --mode repo)"
     base="$mb"
   fi
 
-  # эталонный worktree для заголовка (diff --stat), потом удалим
   make_worktree "$root" "$snap_commit" "$run/_snapshot_ref"
-  write_header "$run" "$mode" "$base" "$snap_commit" "$root" "$(echo $links $extra_links)"
+  write_header "$run" "$mode" "$base" "$snap_commit" "$root" "$(echo $links $extra_links)" "$lang"
   remove_worktree "$root" "$run/_snapshot_ref"
 
-  # промпт
   local lens_args=() l
   if [ -n "$lens" ]; then
     for l in ${lens//,/ }; do
-      [ -f "$ER_SKILL_DIR/prompts/lenses/$l.md" ] || die "run: линза не найдена: prompts/lenses/$l.md"
-      lens_args+=(--lens "$ER_SKILL_DIR/prompts/lenses/$l.md")
+      [ -f "$pdir/lenses/$l.md" ] || die "run: lens not found: prompts/$lang/lenses/$l.md"
+      lens_args+=(--lens "$pdir/lenses/$l.md")
     done
   fi
   if [ -n "$prompt_file" ]; then
     { cat "$run/header.md"; echo; cat "$prompt_file"; } > "$run/prompt.md"
   else
     cp "$brief" "$run/brief.md"
-    py assemble --header "$run/header.md" --protocol "$ER_SKILL_DIR/prompts/reviewer.md" --brief "$run/brief.md" \
+    py assemble --header "$run/header.md" --protocol "$pdir/reviewer.md" --brief "$run/brief.md" \
       "${lens_args[@]}" ${blind:+--blind} > "$run/prompt.md"
   fi
   if [ "$mode" = "plan" ]; then
     cp "$plan" "$run/plan.md"
-    { echo; echo "---"; echo; echo "# Документ на ревью (plan.md)"; echo; cat "$plan"; } >> "$run/prompt.md"
+    { echo; echo "---"; echo; echo "# Document under review (plan.md)"; echo; cat "$plan"; } >> "$run/prompt.md"
   fi
 
-  # рецензенты
   local list
   if [ "$reviewers" = "auto" ]; then list="$(available_backends | tr '\n' ' ')"; else list="${reviewers//,/ }"; fi
-  [ -n "$list" ] || die "run: нет доступных рецензентов (review doctor)"
-  python3 - "$run" "$name" "$mode" "$base" "$snap_commit" "$list" <<'PY'
+  [ -n "$list" ] || die "run: no reviewers available (review doctor)"
+  python3 - "$run" "$name" "$mode" "$base" "$snap_commit" "$list" "$lang" <<'PY'
 import json, sys, datetime
-run, name, mode, base, snap, lst = sys.argv[1:7]
-json.dump({"project": name, "mode": mode, "base": base, "snapshot_commit": snap,
+run, name, mode, base, snap, lst, lang = sys.argv[1:8]
+json.dump({"project": name, "mode": mode, "base": base, "snapshot_commit": snap, "lang": lang,
            "reviewers": lst.split(), "started": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")},
           open(f"{run}/meta.json", "w"), ensure_ascii=False, indent=1)
 PY
@@ -169,7 +188,7 @@ PY
   local r d
   for r in $list; do
     d="$run/$r"; mkdir -p "$d"
-    bash "$ER_SKILL_DIR/bin/backends/${r%%:*}.sh" format > "$d/format" 2>/dev/null || { warn "нет бэкенда $r — пропускаю"; rm -rf "$d"; continue; }
+    bash "$ER_SKILL_DIR/bin/backends/${r%%:*}.sh" format > "$d/format" 2>/dev/null || { warn "no backend $r — skipping"; rm -rf "$d"; continue; }
     make_worktree "$root" "$snap_commit" "$d/snapshot" $links $extra_links
     [ "$mode" != "plan" ] || cp "$plan" "$d/snapshot/plan.md"
     uuid > "$d/session"
@@ -178,20 +197,20 @@ PY
     echo $! > "$d/pid"
   done
   echo "$run"
-  echo "запущены: $list" >&2
-  echo "прогресс: review status $run · дождаться: review wait $run · собрать: review collect $run" >&2
+  echo "started: $list" >&2
+  echo "progress: review status $run · wait: review wait $run · merge: review collect $run" >&2
 }
 
 elapsed() { # elapsed DIR
   local s; s="$(cat "$1/started" 2>/dev/null)" || { echo "—"; return; }
   local e; e="$(cat "$1/finished" 2>/dev/null || now_iso)"
   local a b; a=$(date -d "$s" +%s); b=$(date -d "$e" +%s)
-  printf '%dм%02dс' $(( (b-a)/60 )) $(( (b-a)%60 ))
+  printf '%dm%02ds' $(( (b-a)/60 )) $(( (b-a)%60 ))
 }
 
 cmd_status() {
   local run; run="$(resolve_run "${1:-}")"
-  echo "прогон: $run"
+  echo "run: $run"
   local r d st
   for r in $(run_reviewers "$run"); do
     d="$run/$r"; st="$(status_of "$run" "$r")"
@@ -201,8 +220,8 @@ cmd_status() {
 }
 
 cmd_wait() {
-  # Возвращается не позже чем через --max секунд (по умолчанию 110: меньше 2-минутного таймаута
-  # Bash-инструмента в Claude Code и подобных): exit 0 — все завершены, exit 3 — ещё работают, вызови снова.
+  # Returns within --max seconds (default 110: under the 2-minute Bash tool timeout of Claude Code and
+  # similar harnesses): exit 0 — all finished, exit 3 — still running, call again.
   local run="" interval=15 max="${EXTERNAL_REVIEW_WAIT_MAX:-110}"
   while [ $# -gt 0 ]; do case "$1" in --interval) interval="$2"; shift 2;; --max) max="$2"; shift 2;; *) run="$1"; shift;; esac; done
   run="$(resolve_run "$run")"
@@ -210,9 +229,9 @@ cmd_wait() {
   while :; do
     local busy="" r
     for r in $(run_reviewers "$run"); do case "$(status_of "$run" "$r")" in queued|running) busy="$busy $r";; esac; done
-    if [ -z "$busy" ]; then cmd_status "$run"; echo "все рецензенты завершены: review collect $run"; return 0; fi
+    if [ -z "$busy" ]; then cmd_status "$run"; echo "all reviewers finished: review collect $run"; return 0; fi
     if [ $(( $(date +%s) - t0 )) -ge "$max" ]; then
-      cmd_status "$run"; echo "ещё работают:$busy — вызови review wait $run снова (ждать в headless нельзя иначе)"; return 3
+      cmd_status "$run"; echo "still running:$busy — call review wait $run again (this is the only way to wait in headless mode)"; return 3
     fi
     sleep "$interval"
   done
@@ -225,23 +244,23 @@ cmd_collect() {
 }
 
 cmd_ask() {
-  [ $# -ge 3 ] || die "ask RUN REVIEWER \"вопрос\""
+  [ $# -ge 3 ] || die "ask RUN REVIEWER \"question\""
   local run; run="$(resolve_run "$1")"; local r="$2"; shift 2; local msg="$*"
-  local d="$run/$r"; [ -d "$d" ] || die "нет рецензента $r в прогоне"
+  local d="$run/$r"; [ -d "$d" ] || die "no reviewer $r in this run"
   export ER_RUN="$run" ER_REVIEWER="$r" ER_DIR="$d" ER_SNAPSHOT="$d/snapshot" ER_PROMPT="$run/prompt.md"
   export ER_PROJ_ROOT="$(cat "$run/project_root")" ER_TIMEOUT="$(cat "$run/timeout")"
   local n; n=$(ls "$d"/ask-*.md 2>/dev/null | wc -l); n=$((n+1))
-  { echo "## Вопрос"; echo; echo "$msg"; echo; echo "## Ответ $r"; echo; } > "$d/ask-$n.md"
+  { echo "## Question"; echo; echo "$msg"; echo; echo "## Answer ($r)"; echo; } > "$d/ask-$n.md"
   timeout -k 30 "$ER_TIMEOUT" bash "$ER_SKILL_DIR/bin/backends/${r%%:*}.sh" ask "$msg" 2>>"$d/stderr.log" | tee -a "$d/ask-$n.md"
 }
 
 cmd_logs() {
   local run; run="$(resolve_run "$1")"; local d="$run/$2"
-  echo "--- stderr (хвост) ---"; tail -n 30 "$d/stderr.log" 2>/dev/null
-  echo "--- прогресс ---"; py progress "$(cat "$d/format")" "$d/raw"
+  echo "--- stderr (tail) ---"; tail -n 30 "$d/stderr.log" 2>/dev/null
+  echo "--- progress ---"; py progress "$(cat "$d/format")" "$d/raw"
 }
 
-cmd_runs() { ls -1d "$ER_RUNS/$(proj_name)"-* 2>/dev/null || echo "прогонов нет"; }
+cmd_runs() { ls -1d "$ER_RUNS/$(proj_name)"-* 2>/dev/null || echo "no runs"; }
 
 cmd_clean() {
   local root; root="$(proj_root)"
@@ -254,7 +273,7 @@ cmd_clean() {
       [ -f "$run/$r/pid" ] && kill "$(cat "$run/$r/pid")" 2>/dev/null
       remove_worktree "$root" "$run/$r/snapshot"
     done
-    rm -rf "$run"; echo "удалён $run"
+    rm -rf "$run"; echo "removed $run"
   done
   git -C "$root" worktree prune 2>/dev/null || true
 }
@@ -272,5 +291,5 @@ case "${1:-}" in
   runs) shift; cmd_runs "$@";;
   clean) shift; cmd_clean "$@";;
   -h|--help|help|"") usage;;
-  *) die "неизвестная команда: $1 (review --help)";;
+  *) die "unknown command: $1 (review --help)";;
 esac
