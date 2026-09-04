@@ -20,8 +20,10 @@ Isolation is the same for all: a detached git worktree at a temporary commit of 
 can run tests and edit files to reproduce issues. Additionally, where the CLI supports it:
 claude family — deny rules for writes to the original repository and `~/.claude`, plus `git push`
 is blocked; grok — kernel sandbox `workspace` (requires `bubblewrap`, otherwise `off`);
-codex — `workspace-write`. The symlinks `vendor`, `node_modules`, `.venv`, `.env*` point into the
-original tree: the reviewer is instructed not to modify them.
+codex — `workspace-write`. Ignored dependency directories (`vendor`, `node_modules`, `.venv`,
+`.env*`) are copied into the snapshot by default (`REVIEW_DEPS=copy`); `--deps hardlink|symlink|none`
+switches the mode, and under `symlink` they point into the original tree, so the reviewer is
+instructed not to modify them.
 
 ## claude family (glm, kimi, opus)
 

@@ -108,4 +108,6 @@ not coverage; the findings go into the plan and its tests before any code is wri
 - `prompts/<lang>/reviewer.md` — the review protocol (shared by all reviewers); `prompts/<lang>/plan.md` — the design-review addendum, added in `--mode plan`; `prompts/<lang>/brief.md` — brief template; `prompts/<lang>/lenses/` — lenses. Languages: `en`, `ru`.
 - `references/backends.md` — verified flags and quirks of every CLI, with dates; `references/triage.md` — how to triage the reports; `references/setup.md` — keys, logins, installation, model overrides.
 - `bin/bundle.py` — a single HTTP request without an agent (a plan or a diff without a repository).
+  Needs a z.ai key. It runs the same `prompts/<lang>/plan.md` doctrine the agent reviewers get, and
+  is told it cannot measure anything: every claim it cannot check comes back `unverifiable`, never `ran`.
 - `docs/ru/` — Russian copies of this file and the references.

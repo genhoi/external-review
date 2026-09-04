@@ -64,6 +64,16 @@ echo "plan body" > "$TMP/plan.md"
 RUN3="$("$R" run --reviewers fake --brief "$TMP/brief.md" --mode plan --plan "$TMP/plan.md" 2>/dev/null)"
 grep -q '^# Document under review' "$RUN3/prompt.md" && [ -f "$RUN3/fake/snapshot/plan.md" ]; pass "plan mode"
 grep -q '^# Addendum: the subject is a design' "$RUN3/prompt.md"; pass "plan mode adds the design-review protocol"
+grep -q '^### 0. If the design already brings its own evidence' "$RUN3/prompt.md"; pass "plan mode audits evidence the design already carries"
+grep -q '"claims"' "$RUN3/prompt.md"; pass "plan mode asks for a claims array in the machine block"
+python3 -c "
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location('b', '$SK/bin/bundle.py'); b = importlib.util.module_from_spec(spec); spec.loader.exec_module(b)
+for lang in ('en', 'ru'):
+    s = b.build_system(lang)
+    assert 'Inventory before invention' in s or 'Инвентарь до изобретения' in s, lang
+    assert len(s) > 2000, lang
+"; pass "bundle.py loads the same plan-mode doctrine in both languages"
 ! grep -q 'Addendum' "$RUN2/prompt.md"; pass "the addendum stays out of the other modes"
 until "$R" wait "$RUN3" --max 20 --interval 1 >/dev/null; do :; done
 

@@ -136,5 +136,42 @@ class MergeTest(unittest.TestCase):
             self.assertIn("_no report (status: failed:1)", out)
 
 
+CLAIM_REPORT = """## Machine block
+```json
+{"verdict": "not ready", "findings": [],
+ "claims": [{"claim": "The lockfile is the only record of the override", "verdict": "holds"},
+            {"claim": "Re-resolving reproduces the build", "verdict": "%s"}]}
+```
+"""
+
+
+class ClaimsMergeTest(unittest.TestCase):
+    """Plan mode: per-claim verdicts must cross the reviewer boundary, and stay out of diff mode."""
+
+    def _run(self, dirpath, reports):
+        run = Path(dirpath)
+        (run / "meta.json").write_text(json.dumps({"project": "p", "mode": "plan", "base": "abc", "lang": "en"}))
+        for name, text in reports.items():
+            (run / name).mkdir()
+            (run / name / "status").write_text("done")
+            (run / name / "report.md").write_text(text, encoding="utf-8")
+        return extract.merge(run)
+
+    def test_disagreement_sorts_first_and_every_reviewer_gets_a_column(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = self._run(d, {"glm": CLAIM_REPORT % "breaks", "opus": CLAIM_REPORT % "unverifiable"})
+            self.assertIn("| # | Claim | glm | opus |", out)
+            body = out[out.index("| # | Claim |"):]
+            rows = [ln for ln in body.splitlines() if ln.startswith("| 1 |") or ln.startswith("| 2 |")]
+            self.assertIn("Re-resolving reproduces the build", rows[0])        # disagreement first
+            self.assertIn("**breaks**", rows[0])
+            self.assertIn("unverifiable", rows[0])
+            self.assertIn("holds | holds", rows[1])                            # agreement below
+
+    def test_diff_mode_report_has_no_claims_section(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertNotIn("Design claims", self._run(d, {"a": REPORT, "b": REPORT}))
+
+
 if __name__ == "__main__":
     unittest.main()

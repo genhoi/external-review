@@ -109,3 +109,5 @@ $R run --brief /tmp/brief-<project>.md --mode plan --plan design.md --reviewers 
 - `prompts/<lang>/reviewer.md` — протокол ревью (общий для всех); `prompts/<lang>/plan.md` — дополнение для ревью дизайна, подключается в `--mode plan`; `prompts/<lang>/brief.md` — шаблон вводной; `prompts/<lang>/lenses/` — линзы. Языки: `en`, `ru`.
 - `references/backends.md` — проверенные флаги и грабли каждого CLI с датами; `references/triage.md` — разбор отчётов; `references/setup.md` — ключи, логины, установка.
 - `bin/bundle.py` — одиночный HTTP-запрос без агента (план или дифф без репозитория).
+  Нужен ключ z.ai. Работает по той же доктрине `prompts/<lang>/plan.md`, что и агенты-рецензенты, и
+  ему сказано, что измерить он ничего не может: непроверяемое возвращается как «непроверяемо», не `ran`.

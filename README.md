@@ -25,7 +25,7 @@ them against the real code.
   author did. GLM, Kimi, Grok and Codex miss different things; findings they agree on are almost
   certainly real, findings they disagree on are exactly where you should look yourself.
 - **Reviewers execute, not skim.** Each one works in a writable git worktree snapshot with your
-  dependencies symlinked in: it runs the test suite, writes a repro, applies a candidate fix and
+  dependencies copied in: it runs the test suite, writes a repro, applies a candidate fix and
   reverts it. A finding without a trigger and evidence does not make it into the report.
 - **Harness-agnostic.** The orchestrator can be Claude Code, or GLM/Kimi running inside Claude Code
   when your Claude quota is gone, or Codex — anything with a shell. The scripts need only `bash`,
@@ -141,6 +141,13 @@ unverifiable. Worth it for money paths, invariants shared by several consumers, 
 migrations, where the wrong foundation costs a rewrite rather than a patch. Two reviewers are enough
 at this stage; the findings land in the plan and its tests before any code is written.
 
+Sections 1–4 of that addendum mirror
+[evidence-first-design](https://github.com/genhoi/evidence-first-design) on purpose: that skill is
+what the executor does before writing code, for free, every time; this is the second opinion worth
+its cost when the blast radius is large. A design that arrives carrying its own inventory,
+measurements and matrix is not re-derived here — the reviewer audits those claims instead, which is
+both cheaper and the more useful question. Change one of the two and change the other.
+
 ## Works from any orchestrator
 
 The skill was tested end-to-end with a fresh Claude subagent and with **GLM-5.3 running headless inside
@@ -208,10 +215,11 @@ end-to-end with a stub reviewer — no API keys — and is what GitHub Actions e
 
 ```
 SKILL.md                 orchestrator instructions (read by the agent)
-bin/review               CLI: doctor | config | brief | run | status | wait | collect | ask | logs | runs | clean
+bin/review               CLI: doctor | config | brief | preflight | run | status | wait | collect | ask | feedback | logs | runs | clean
 bin/backends/*.sh        one script per reviewer
 bin/lib/                 snapshot, background launch, output parsing, defaults
-bin/bundle.py            a single HTTP request without an agent (a plan without a repository)
+bin/bundle.py            a single HTTP request without an agent, no repository needed (needs a z.ai key;
+                         shares prompts/<lang>/plan.md, honours REVIEW_LANG and --lang)
 prompts/en, prompts/ru   review protocol, brief template, lenses (correctness, security, ops, tests)
 references/              setup, backends, triage
 tests/                   fixture generator, briefs, results

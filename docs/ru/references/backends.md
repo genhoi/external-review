@@ -20,8 +20,10 @@
 может гонять тесты и править ради воспроизведения. Дополнительно там, где CLI умеет:
 claude-семейство — deny-правила на запись в оригинальный репозиторий и `~/.claude` плюс запрет
 `git push`; grok — kernel-sandbox `workspace` (нужен `bubblewrap`, иначе `off`);
-codex — `workspace-write`. Симлинки `vendor`, `node_modules`, `.venv`, `.env*` ведут в
-оригинальное дерево: рецензенту велено их не менять.
+codex — `workspace-write`. Игнорируемые каталоги зависимостей (`vendor`, `node_modules`, `.venv`,
+`.env*`) по умолчанию копируются в снапшот (`REVIEW_DEPS=copy`); режим меняется через
+`--deps hardlink|symlink|none`, и при `symlink` они ведут в оригинальное дерево — тогда рецензенту
+велено их не менять.
 
 ## claude-семейство (glm, kimi, opus)
 

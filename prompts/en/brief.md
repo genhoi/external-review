@@ -24,6 +24,15 @@
 - Static analysis / type checking / linter: `...`
 - Not available in this environment: ...
 
+## Stand data (plan mode only)
+<!-- `--mode plan` asks the reviewer to measure the design's assumptions against real data. Without
+     this section they can only read the document, which produces taste. Name a stand or a copy —
+     NEVER production — and the exact way to reach it. Leave the section out for a diff review. -->
+- Database the reviewer may probe (stand or copy, never production): ...
+- How to connect / open a session: `...`
+- Writes allowed only inside a rolled-back transaction: yes / no
+- The most degenerate real records worth looking at (ids or a query that finds them): ...
+
 ## Repository map
 <!-- 2–3 lines per directory: domain, infrastructure, tests, docs. Only what is needed to
      avoid wandering. -->

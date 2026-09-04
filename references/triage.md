@@ -28,6 +28,26 @@ findings with reasons. No finding is applied without checking it against the cod
    the affected ones. If the reviewer provided "how to verify the fix" — do it.
 7. **`review clean RUN`** once everything accepted has been fixed and verified.
 
+## Plan mode: triaging a design review
+
+A plan-mode report is shaped differently and triages differently.
+
+- **Start from `## Design claims` in `merged.md`, not from the findings.** Rows where the reviewers
+  disagree — one `breaks`, another `unverifiable` — are where you look first; a claim all of them
+  mark `holds` needs nothing from you.
+- **`unverifiable` is not a rejection.** It means the reviewer could not reach the data: no stand
+  database, no way to run the code. It is your homework — either measure it yourself, or state in
+  the design that the claim is unverified. Filing it as "rejected" is how a design ships on an
+  assumption nobody checked.
+- **A finding lands in the plan, not in a patch.** There is no code to fix yet: the output of this
+  triage is an edited design document, and the check that it is done is the claim turning from
+  `breaks` into `holds` with evidence.
+- **Two reviewers, not five.** Step 2's "shared by two or more" heuristic barely applies — with two
+  reviewers, agreement is weak evidence and disagreement is the signal. Read both in full.
+- **Re-run after editing the design.** A design changed in response to findings is a new design;
+  `review run --mode plan` on the edited document costs one more run and is the only thing that
+  shows the fix did not break another claim.
+
 ## What is suspicious
 
 - A finding without a description of the input or state under which it manifests → a hypothesis, not a finding.

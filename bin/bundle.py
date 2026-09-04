@@ -1,41 +1,85 @@
 #!/usr/bin/env python3
-"""bundle.py — запасной режим без агента: один HTTP-запрос с планом/диффом в GLM-5.3 через z.ai
-(Anthropic-совместимый эндпоинт) и печатает текст ревью в stdout.
+"""bundle.py — fallback mode without an agent: one HTTP request carrying a plan or a diff to
+GLM-5.3 through z.ai (Anthropic-compatible endpoint), printing the review to stdout.
 
-Зависимостей нет — только стандартная библиотека Python 3.
+Use it when there is no repository to snapshot — a design document on its own. It cannot run
+anything, so it cannot produce the kind of evidence an agent reviewer produces: it is told to
+say so rather than to guess. The review doctrine is not written here — it is loaded from
+prompts/<lang>/plan.md, the same file the agent reviewers get, so the two cannot drift apart.
 
-Использование:
-    bundle.py <file> [file ...]   # ревью одного или нескольких файлов
-    cat plan.md | bundle.py       # ревью из stdin
+No dependencies beyond the Python 3 standard library.
 
-Настройка через окружение:
-    ZAI_API_KEY    ключ z.ai (или положить в ~/.claude/zai_api_key)
-    ZAI_MODEL      модель (по умолчанию glm-5.3; суффикс [1m] только в агентном режиме)
-    ZAI_BASE_URL   база (по умолчанию https://api.z.ai/api/anthropic)
-    ZAI_MAX_TOKENS лимит ответа (по умолчанию 65536: reasoning при effort=max съедает бюджет ДО текста ответа)
+Usage:
+    bundle.py [--lang en|ru] <file> [file ...]   # review one or more files
+    cat plan.md | bundle.py                      # review from stdin
+
+Environment:
+    REVIEW_LANG    review language: en (default) | ru; --lang overrides it
+    ZAI_API_KEY    z.ai key (or put it in ~/.claude/zai_api_key)
+    ZAI_MODEL      model (default glm-5.3; the [1m] suffix is agent mode only)
+    ZAI_BASE_URL   base URL (default https://api.z.ai/api/anthropic)
+    ZAI_MAX_TOKENS response limit (default 65536: reasoning at effort=max eats the budget
+                   BEFORE the answer text)
 """
 import json
 import os
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 
+ROOT = Path(__file__).resolve().parent.parent
 BASE_URL = os.environ.get("ZAI_BASE_URL", "https://api.z.ai/api/anthropic").rstrip("/")
 MODEL = os.environ.get("ZAI_MODEL", "glm-5.3")
 MAX_TOKENS = int(os.environ.get("ZAI_MAX_TOKENS", "65536"))
-# Уровень "размышления" GLM: max|xhigh|high|medium|low|minimal|none|off (по умолчанию max).
+# GLM reasoning level: max|xhigh|high|medium|low|minimal|none|off (default max).
 REASONING_EFFORT = os.environ.get("ZAI_REASONING_EFFORT", "max")
 
-SYSTEM = (
-    "Ты — придирчивый staff-инженер, делаешь независимое ревью плана реализации "
-    "(или дизайна/диффа) другого инженера. Отвечай по-русски. Не льсти и не пересказывай план. "
-    "Ищи: логические ошибки, упущенные edge-cases, риски для прод-данных и обратной "
-    "совместимости, гонки/конкурентность, проблемы производительности, неверные допущения, "
-    "более простые альтернативы. Каждое замечание оформляй строкой вида: "
-    "[severity: blocker|major|minor] — конкретное место в плане — в чём проблема — что предложить. "
-    "В конце дай короткий вердикт в 1-2 предложениях. Если план действительно хорош — "
-    "так и скажи прямо, без выдумывания проблем."
-)
+# What bundle mode is, and is not. The doctrine itself comes from prompts/<lang>/plan.md.
+FRAMING = {
+    "en": (
+        "You are reviewing the design below. There is NO repository and NO way to run anything: "
+        "you cannot query data, run tests or read call sites. The protocol you are given assumes "
+        "you can. Follow its reasoning, and wherever it asks for a measurement you cannot make, "
+        "the verdict is `unverifiable` — say exactly what would have to be measured and how. "
+        "Never present a guess as evidence: in this mode no claim may be tagged `ran`. Do not "
+        "flatter and do not retell the design.\n\n"
+        "Report: `## Design claims` (a table of claim / verdict / what would settle it), then "
+        "`## Findings` (severity, the place in the design, what breaks, what to do), then a "
+        "two-sentence verdict. If the design is genuinely sound, say so plainly."
+    ),
+    "ru": (
+        "Ты ревьюишь дизайн ниже. Репозитория НЕТ и запустить ничего нельзя: ни запросить данные, "
+        "ни прогнать тесты, ни прочитать вызывающие места. Протокол ниже предполагает, что можно. "
+        "Следуй его рассуждению, но там, где он требует замера, которого ты сделать не можешь, "
+        "вердикт — «непроверяемо»: скажи точно, что и как следовало бы измерить. Никогда не выдавай "
+        "догадку за улику: в этом режиме ни одно утверждение не может иметь тег `ran`. Не льсти и "
+        "не пересказывай дизайн.\n\n"
+        "Отчёт: `## Утверждения плана` (таблица утверждение / вердикт / чем проверяется), затем "
+        "`## Находки` (severity, место в дизайне, что ломается, что предложить), затем вердикт в "
+        "двух предложениях. Если дизайн действительно хорош — скажи прямо."
+    ),
+}
+
+
+def default_lang() -> str:
+    lang = os.environ.get("REVIEW_LANG", "").strip()
+    if not lang:
+        cfg = Path(os.path.expanduser("~/.config/external-review/config.env"))
+        if cfg.is_file():
+            for line in cfg.read_text(encoding="utf-8", errors="replace").splitlines():
+                line = line.strip()
+                if line.startswith("REVIEW_LANG="):
+                    lang = line.split("=", 1)[1].strip().strip("\"'")
+    return lang if lang in ("en", "ru") else "en"
+
+
+def build_system(lang: str) -> str:
+    """Framing + the shared plan-mode doctrine, so bundle mode teaches what the agents are taught."""
+    doctrine = ROOT / "prompts" / lang / "plan.md"
+    if not doctrine.is_file():
+        sys.exit(f"ERROR: doctrine file not found: {doctrine}")
+    return FRAMING[lang] + "\n\n---\n\n" + doctrine.read_text(encoding="utf-8")
 
 
 def get_key() -> str:
@@ -60,11 +104,11 @@ def read_input(files: list[str]) -> str:
 
 
 def send(body: dict, key: str) -> tuple[str, str]:
-    """Стримит ответ Anthropic-совместимого эндпоинта (SSE).
+    """Streams the Anthropic-compatible endpoint's response (SSE).
 
-    Стриминг обязателен: при reasoning_effort=max генерация длинная, и нестримовый
-    запрос рвёт шлюз по idle-таймауту (RemoteDisconnected). Возвращает (текст, stop_reason).
-    Текст рассуждения (thinking) опускаем — нужен только финальный текст ревью.
+    Streaming is mandatory: at reasoning_effort=max generation is long and a non-streaming request
+    is cut by the gateway's idle timeout (RemoteDisconnected). Returns (text, stop_reason).
+    Reasoning text (thinking) is dropped — only the final review text is wanted.
     """
     req = urllib.request.Request(
         f"{BASE_URL}/v1/messages",
@@ -104,36 +148,54 @@ def send(body: dict, key: str) -> tuple[str, str]:
 
 
 def send_with_retry(body: dict, key: str, tries: int = 2) -> tuple[str, str]:
-    """Обёртка с ретраем на обрыв соединения (HTTP-ошибки пробрасываем как есть)."""
+    """Retries a dropped connection (HTTP errors are re-raised as they are)."""
     last_exc: Exception | None = None
     for attempt in range(tries):
         try:
             return send(body, key)
         except urllib.error.HTTPError:
             raise
-        except (urllib.error.URLError, OSError) as exc:  # вкл. RemoteDisconnected
+        except (urllib.error.URLError, OSError) as exc:  # incl. RemoteDisconnected
             last_exc = exc
             if attempt + 1 < tries:
-                print(f"WARN: обрыв соединения ({exc}), повтор...", file=sys.stderr)
+                print(f"WARN: connection dropped ({exc}), retrying...", file=sys.stderr)
     raise last_exc  # type: ignore[misc]
 
 
 def main() -> None:
+    argv = sys.argv[1:]
+    lang = default_lang()
+    files: list[str] = []
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--lang":
+            if i + 1 >= len(argv) or argv[i + 1] not in ("en", "ru"):
+                sys.exit("ERROR: --lang takes en or ru")
+            lang = argv[i + 1]
+            i += 2
+        elif argv[i].startswith("--lang="):
+            lang = argv[i].split("=", 1)[1]
+            if lang not in ("en", "ru"):
+                sys.exit("ERROR: --lang takes en or ru")
+            i += 1
+        else:
+            files.append(argv[i])
+            i += 1
+
     key = get_key()
     if not key:
-        sys.exit("ERROR: задайте ZAI_API_KEY или положите ключ в ~/.claude/zai_api_key")
+        sys.exit("ERROR: set ZAI_API_KEY or put the key in ~/.claude/zai_api_key")
 
-    text = read_input(sys.argv[1:]).strip()
+    text = read_input(files).strip()
     if not text:
-        sys.exit("ERROR: пустой вход — нечего ревьюить")
+        sys.exit("ERROR: empty input — nothing to review")
 
+    ask = {"en": "Review the design below:\n\n", "ru": "Сделай ревью дизайна ниже:\n\n"}[lang]
     body = {
         "model": MODEL,
         "max_tokens": MAX_TOKENS,
-        "system": SYSTEM,
-        "messages": [
-            {"role": "user", "content": "Сделай ревью следующего плана/материала:\n\n" + text}
-        ],
+        "system": build_system(lang),
+        "messages": [{"role": "user", "content": ask + text}],
     }
     if REASONING_EFFORT and REASONING_EFFORT.lower() not in ("off", ""):
         body["reasoning_effort"] = REASONING_EFFORT
@@ -143,27 +205,27 @@ def main() -> None:
         text, stop_reason = send_with_retry(body, key)
     except urllib.error.HTTPError as exc:
         err_body = exc.read().decode("utf-8", "replace")
-        # Anthropic-совместимый эндпоинт может не принять reasoning_effort — повторяем без него
-        # (у GLM effort по умолчанию = max, поэтому качество не падает).
+        # The Anthropic-compatible endpoint may reject reasoning_effort — retry without it
+        # (GLM defaults to max anyway, so quality does not drop).
         if exc.code == 400 and "reasoning_effort" in body and "effort" in err_body.lower():
             del body["reasoning_effort"]
             print(
-                "WARN: reasoning_effort отклонён эндпоинтом, повтор без него (дефолт GLM = max)",
+                "WARN: reasoning_effort rejected by the endpoint, retrying without it (GLM default = max)",
                 file=sys.stderr,
             )
             try:
                 text, stop_reason = send_with_retry(body, key)
             except (urllib.error.URLError, OSError) as exc2:
-                sys.exit(f"ERROR: повтор не удался: {exc2}")
+                sys.exit(f"ERROR: retry failed: {exc2}")
         else:
-            sys.exit(f"ERROR: HTTP {exc.code} от z.ai:\n{err_body}")
+            sys.exit(f"ERROR: HTTP {exc.code} from z.ai:\n{err_body}")
     except (urllib.error.URLError, OSError) as exc:
-        sys.exit(f"ERROR: проблема соединения: {exc}")
+        sys.exit(f"ERROR: connection problem: {exc}")
 
     out = text.strip()
     if not out:
-        hint = " — весь бюджет ушёл в reasoning, увеличь ZAI_MAX_TOKENS" if stop_reason == "max_tokens" else ""
-        sys.exit(f"ERROR: пустой ответ модели (stop_reason={stop_reason or '?'}){hint}")
+        hint = " — the whole budget went into reasoning, raise ZAI_MAX_TOKENS" if stop_reason == "max_tokens" else ""
+        sys.exit(f"ERROR: empty model response (stop_reason={stop_reason or '?'}){hint}")
 
     print(out)
 

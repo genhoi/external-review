@@ -366,6 +366,7 @@ def merge(run_dir):
     out.append("| Reviewer | Status | Turns | Tool calls | Duration | Tokens in (cached) / out | Cost | Files changed in snapshot |")
     out.append("|---|---|---|---|---|---|---|---|")
     all_findings = []
+    all_claims = []
     reports = {}
     for r in reviewers:
         d = run / r
@@ -394,6 +395,11 @@ def merge(run_dir):
                     f = dict(f)
                     f["_reviewer"] = r
                     all_findings.append(f)
+            for c in data.get("claims", []) or []:
+                if isinstance(c, dict):
+                    c = dict(c)
+                    c["_reviewer"] = r
+                    all_claims.append(c)
     out.append("")
 
     # grouping: same file and line within ±15
@@ -430,6 +436,32 @@ def merge(run_dir):
     if not groups:
         out.append("| — | — | — | — | no JSON findings block in any report: read the reports manually | — | |")
     out.append("")
+
+    # plan mode: one row per design claim, one column per reviewer. Absent in diff mode.
+    if all_claims:
+        cgroups = {}
+        for c in all_claims:
+            key = re.sub(r"\s+", " ", str(c.get("claim") or c.get("title") or "")).strip().lower()[:120]
+            cgroups.setdefault(key, []).append(c)
+
+        def _verdict(v):
+            v = str(v or "").strip().lower()
+            return {"holds": "holds", "breaks": "**breaks**", "unverifiable": "unverifiable"}.get(v, v or "—")
+
+        out.append("## Design claims (plan mode; claims the reviewers disagree on are the ones to read)")
+        out.append("")
+        out.append("| # | Claim | " + " | ".join(reviewers) + " |")
+        out.append("|---|---|" + "---|" * len(reviewers))
+        ordered = sorted(
+            cgroups.items(),
+            key=lambda kv: (0 if any(str(x.get("verdict", "")).strip().lower() == "breaks" for x in kv[1]) else 1,
+                            -len(kv[1])))
+        for i, (_key, items) in enumerate(ordered, 1):
+            text = str(items[0].get("claim") or items[0].get("title") or "")[:110].replace("|", "/")
+            by_rev = {x["_reviewer"]: x.get("verdict") for x in items}
+            out.append(f"| {i} | {text} | " + " | ".join(_verdict(by_rev.get(r)) for r in reviewers) + " |")
+        out.append("")
+
     for r in reviewers:
         d = run / r
         data = findings_from_report(reports.get(r, ""))
