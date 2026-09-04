@@ -63,7 +63,7 @@ z.ai и Kimi — их доки по Claude Code (суффикс `[1m]` толь�
 | `EXTERNAL_REVIEW_NO_USAGE` | — | `1` выключает локальный журнал использования (`usage.jsonl`) |
 | `EXTERNAL_REVIEW_REPO` | `genhoi/external-review` | куда `review feedback --issue` отправляет issue |
 | `EXTERNAL_REVIEW_HOME` | `~/.local/state/external-review` | прогоны, снапшоты, config dir'ы |
-| `EXTERNAL_REVIEW_TIMEOUT` | `2700` | секунд на рецензента |
+| `EXTERNAL_REVIEW_TIMEOUT` | `5400` | секунд на рецензента (обрыв до записи отчёта теряет весь прогон) |
 | `GLM_MODEL` / `KIMI_MODEL` / `OPUS_MODEL` / `GROK_MODEL` / `CODEX_MODEL` / `KIMI_CLI_MODEL` | `review config` | модель рецензента (лучше через `review config set`) |
 | `GROK_EFFORT` | `xhigh` | effort grok (максимум) |
 | `CODEX_EFFORT` | `ultra` | effort codex; `ultra`/`max` есть только у `gpt-5.6-sol`/`-terra`, у моделей постарше потолок `xhigh` |

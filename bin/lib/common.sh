@@ -6,7 +6,9 @@ ER_SKILL_DIR="${ER_SKILL_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd
 ER_HOME="${EXTERNAL_REVIEW_HOME:-$HOME/.local/state/external-review}"
 ER_RUNS="$ER_HOME/runs"
 ER_CFG="$ER_HOME/cfg"          # isolated CLAUDE_CONFIG_DIR per third-party backend
-ER_DEFAULT_TIMEOUT="${EXTERNAL_REVIEW_TIMEOUT:-2700}"   # 45 minutes per reviewer
+ER_DEFAULT_TIMEOUT="${EXTERNAL_REVIEW_TIMEOUT:-5400}"   # 90 min per reviewer: field runs average
+                                                        # 22-31 min, and a kill before the report is
+                                                        # written loses the whole run
 ER_DEFAULT_LINKS="vendor node_modules .venv .env .env.local .env.test"
 ER_ALL_BACKENDS="glm kimi kimi-cli grok codex opus"
 source "$ER_SKILL_DIR/bin/lib/defaults.sh"

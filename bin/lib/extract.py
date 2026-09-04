@@ -7,6 +7,7 @@
     extract.py assemble --header H --protocol P --brief B [--lens L]... [--blind]
     extract.py merge    RUN_DIR           # merged.md to stdout
     extract.py profile  ROOT [--source]   # project review profile text (or its source name)
+    extract.py error    META_JSON         # first error message from a reviewer's meta.json
     extract.py summary  RUN_DIR           # per-reviewer JSON summary for the usage journal
     extract.py digest   HOME [--since D]  # Markdown digest of usage.jsonl + feedback.jsonl
 
@@ -369,6 +370,8 @@ def merge(run_dir):
     for r in reviewers:
         d = run / r
         st = (d / "status").read_text().strip()
+        if (d / "partial").exists():
+            st += f" ({(d / 'partial').read_text().strip()})"
         m = json.loads((d / "meta.json").read_text()) if (d / "meta.json").exists() else {}
         changes = (d / "snapshot_changes").read_text().strip().splitlines() if (d / "snapshot_changes").exists() else []
         dur = m.get("duration_ms")
@@ -445,6 +448,26 @@ def merge(run_dir):
 
 # ---------- usage summary and digest ----------
 
+def first_error(meta_path):
+    """First error message from a reviewer's meta.json, one line, for the partial-completion note."""
+    try:
+        errs = json.loads(Path(meta_path).read_text(encoding="utf-8")).get("errors") or []
+    except Exception:
+        return ""
+    for e in errs:
+        msg = ""
+        try:
+            o = json.loads(e) if isinstance(e, str) else e
+            if isinstance(o, dict):
+                msg = o.get("message") or (o.get("error") or {}).get("message") or ""
+        except Exception:
+            msg = e if isinstance(e, str) else ""
+        msg = " ".join(str(msg).split())
+        if len(msg) > 8:          # bare markers like "error" carry nothing
+            return msg[:100]
+    return ""
+
+
 def run_summary(run_dir):
     """Per-reviewer compact summary of a run (for the usage journal): no report text."""
     run = Path(run_dir)
@@ -457,6 +480,7 @@ def run_summary(run_dir):
             if isinstance(f, dict):
                 sev[str(f.get("severity"))] = sev.get(str(f.get("severity")), 0) + 1
         out[d.name] = {"status": (d / "status").read_text().strip(), "exit": (d / "exit").read_text().strip() if (d / "exit").exists() else None,
+                       "partial": (d / "partial").read_text().strip() if (d / "partial").exists() else None,
                        "duration_ms": m.get("duration_ms"), "tool_calls": m.get("tool_calls"), "tokens_in": m.get("tokens_in"),
                        "tokens_out": m.get("tokens_out"), "cost_usd": m.get("cost_usd"), "findings": sev or None,
                        "verdict": data.get("verdict"), "asks": len(list(d.glob("ask-*.md")))}
@@ -499,21 +523,22 @@ def digest(home, since=None):
         for name, r in (c.get("reviewers") or {}).items():
             if not isinstance(r, dict):
                 continue
-            st = stats.setdefault(name, {"n": 0, "done": 0, "dur": [], "tools": [], "tok_in": [], "tok_out": [], "cost": [], "findings": 0, "asks": 0})
+            st = stats.setdefault(name, {"n": 0, "done": 0, "dur": [], "tools": [], "tok_in": [], "tok_out": [], "cost": [], "findings": 0, "asks": 0, "partial": 0})
             st["n"] += 1
             st["done"] += 1 if str(r.get("status", "")).startswith("done") else 0
+            st["partial"] += 1 if r.get("partial") else 0
             for key, field in (("dur", "duration_ms"), ("tools", "tool_calls"), ("tok_in", "tokens_in"), ("tok_out", "tokens_out"), ("cost", "cost_usd")):
                 if isinstance(r.get(field), (int, float)):
                     st[key].append(r[field])
             st["findings"] += sum((r.get("findings") or {}).values()) if isinstance(r.get("findings"), dict) else 0
             st["asks"] += r.get("asks") or 0
     if stats:
-        out += ["", "## Reviewers (from collected runs)", "", "| Reviewer | Runs | Done | Avg duration | Avg tool calls | Avg tokens in / out | Avg cost | Findings | Asks |", "|---|---|---|---|---|---|---|---|---|"]
+        out += ["", "## Reviewers (from collected runs)", "", "| Reviewer | Runs | Done | Partial | Avg duration | Avg tool calls | Avg tokens in / out | Avg cost | Findings | Asks |", "|---|---|---|---|---|---|---|---|---|---|"]
         avg = lambda xs: (sum(xs) / len(xs)) if xs else None
         for name, st in sorted(stats.items()):
             d = avg(st["dur"]); dur = f"{int(d // 60000)}m {int(d % 60000 // 1000)}s" if d else "—"
             c = avg(st["cost"]); cost = f"${c:.2f}" if c is not None else "—"
-            out.append(f"| {name} | {st['n']} | {st['done']} | {dur} | {_k(avg(st['tools']))} | {_k(avg(st['tok_in']))} / {_k(avg(st['tok_out']))} | {cost} | {st['findings']} | {st['asks']} |")
+            out.append(f"| {name} | {st['n']} | {st['done']} | {st['partial']} | {dur} | {_k(avg(st['tools']))} | {_k(avg(st['tok_in']))} / {_k(avg(st['tok_out']))} | {cost} | {st['findings']} | {st['asks']} |")
     if notes:
         out += ["", "## Notes from orchestrators", ""]
         for n in notes:
@@ -551,6 +576,8 @@ def main(argv):
         print(assemble(ap.parse_args(rest)))
     elif cmd == "merge":
         print(merge(rest[0]), end="")
+    elif cmd == "error":
+        print(first_error(rest[0]))
     elif cmd == "summary":
         print(json.dumps(run_summary(rest[0]), ensure_ascii=False))
     elif cmd == "digest":

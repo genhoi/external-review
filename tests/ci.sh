@@ -63,14 +63,24 @@ until "$R" wait "$RUN2" --max 20 --interval 1 >/dev/null; do :; done
 echo "plan body" > "$TMP/plan.md"
 RUN3="$("$R" run --reviewers fake --brief "$TMP/brief.md" --mode plan --plan "$TMP/plan.md" 2>/dev/null)"
 grep -q '^# Document under review' "$RUN3/prompt.md" && [ -f "$RUN3/fake/snapshot/plan.md" ]; pass "plan mode"
+grep -q '^# Addendum: the subject is a design' "$RUN3/prompt.md"; pass "plan mode adds the design-review protocol"
+! grep -q 'Addendum' "$RUN2/prompt.md"; pass "the addendum stays out of the other modes"
 until "$R" wait "$RUN3" --max 20 --interval 1 >/dev/null; do :; done
 
 echo "== dead wrapper is reaped from what is on disk"
 RUN4="$("$R" run --reviewers fake --brief "$TMP/brief.md" --base main 2>/dev/null)"
 until "$R" wait "$RUN4" --max 20 --interval 1 >/dev/null; do :; done
 echo running > "$RUN4/fake/status"; echo 999999 > "$RUN4/fake/pid"; rm -f "$RUN4/fake/exit"   # pretend the wrapper vanished mid-flight
-"$R" status "$RUN4" | grep -q 'fake done(exit died)'; pass "died + report on disk → done(exit died)"
+"$R" status "$RUN4" | grep -q 'fake done(killed)'; pass "died + report on disk → done(killed)"
 "$R" wait "$RUN4" --max 5 >/dev/null; pass "wait does not block on a dead reviewer"
+
+echo "== a run cut short is reported as partial, not as a clean done"
+bash -c 'ER_SKILL_DIR="$1"; source "$1/bin/lib/common.sh"; source "$1/bin/lib/finalize.sh"; finalize_reviewer "$2" fake 124' _ "$SK" "$RUN4"
+grep -q 'timeout or kill' "$RUN4/fake/partial"; pass "timeout leaves a partial marker"
+"$R" status "$RUN4" | grep -q 'done(timeout or kill)'; pass "status shows why it is incomplete"
+"$R" collect "$RUN4" >/dev/null && grep -q 'done (timeout or kill)' "$RUN4/merged.md"; pass "merged.md shows it in the reviewer table"
+bash -c 'ER_SKILL_DIR="$1"; source "$1/bin/lib/common.sh"; source "$1/bin/lib/finalize.sh"; finalize_reviewer "$2" fake 0' _ "$SK" "$RUN4"
+[ ! -f "$RUN4/fake/partial" ]; pass "a clean finish leaves no marker"
 
 echo "== usage journal and feedback"
 U="$EXTERNAL_REVIEW_HOME/usage.jsonl"

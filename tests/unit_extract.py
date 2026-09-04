@@ -95,6 +95,29 @@ class ProfileTest(unittest.TestCase):
             self.assertEqual(extract.project_profile(d), (None, ""))
 
 
+class FirstErrorTest(unittest.TestCase):
+    def _meta(self, errors):
+        d = tempfile.mkdtemp()
+        p = Path(d) / "meta.json"
+        p.write_text(json.dumps({"errors": errors}), encoding="utf-8")
+        return p
+
+    def test_codex_style_json_string(self):
+        e = json.dumps({"type": "error", "message": "You've hit your usage limit. Try again at 2 AM."})
+        self.assertIn("usage limit", extract.first_error(self._meta([e])))
+
+    def test_nested_error_message(self):
+        e = json.dumps({"type": "turn.failed", "error": {"message": "API Error: 529 Overloaded"}})
+        self.assertEqual(extract.first_error(self._meta([e])), "API Error: 529 Overloaded")
+
+    def test_bare_marker_is_not_a_message(self):
+        self.assertEqual(extract.first_error(self._meta(["error"])), "")
+
+    def test_no_errors_and_no_file(self):
+        self.assertEqual(extract.first_error(self._meta([])), "")
+        self.assertEqual(extract.first_error("/nonexistent/meta.json"), "")
+
+
 class MergeTest(unittest.TestCase):
     def test_merge_groups_and_table(self):
         with tempfile.TemporaryDirectory() as d:

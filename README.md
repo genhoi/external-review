@@ -126,6 +126,21 @@ Intent as understood: (1) deduplicate PayGate webhook redeliveries, (2) add an `
 …
 ```
 
+## Design review — before the code exists
+
+```bash
+review run --brief brief.md --mode plan --plan design.md --reviewers glm,opus
+```
+
+The reviewers get the document, the repository, and an addendum to the protocol
+([`prompts/en/plan.md`](prompts/en/plan.md)) that points them at the design's assumptions rather than
+its prose: inventory what the system already computes before inventing a new computation, measure the
+design against the worst real records, state the invariant and check that every consumer reads one
+source, enumerate the state space, and return a verdict on each claim — holds / breaks on … /
+unverifiable. Worth it for money paths, invariants shared by several consumers, state machines and
+migrations, where the wrong foundation costs a rewrite rather than a patch. Two reviewers are enough
+at this stage; the findings land in the plan and its tests before any code is written.
+
 ## Works from any orchestrator
 
 The skill was tested end-to-end with a fresh Claude subagent and with **GLM-5.3 running headless inside

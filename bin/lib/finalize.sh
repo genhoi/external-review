@@ -5,6 +5,24 @@
 
 nonblank() { [ -n "$(tr -d '[:space:]' < "$1" 2>/dev/null)" ]; }
 
+# Why the run did not complete cleanly, if it did not: a report may exist and still be a fragment
+# (killed on the timeout, out of quota half-way). Empty output = clean finish.
+partial_reason() { # partial_reason DIR EXIT_CODE
+  local d="$1" code="$2" reason="" err=""
+  case "$code" in
+    0|"")        ;;
+    124|137|143) reason="timeout or kill";;
+    died)        reason="killed";;
+    *)           reason="exit $code";;
+  esac
+  # the error message explains a bad exit; on a clean exit a transient one (a reconnect) is not a defect
+  if [ -n "$reason" ] && [ -f "$d/meta.json" ]; then
+    err="$(py error "$d/meta.json" 2>/dev/null)"
+    [ -z "$err" ] || reason="$reason; $err"
+  fi
+  printf '%s' "$reason"
+}
+
 finalize_reviewer() {
   local run="$1" r="$2" code="$3" d="$1/$2"; : "$r"
   local fmt; fmt="$(cat "$d/format" 2>/dev/null || echo text)"
@@ -17,6 +35,8 @@ finalize_reviewer() {
   # the reviewer is told to duplicate the report into REVIEW.md in the snapshot — fallback when stream extraction fails
   if ! nonblank "$d/report.md" && nonblank "$snap/REVIEW.md"; then cp "$snap/REVIEW.md" "$d/report.md"; fi
   echo "$code" > "$d/exit"
+  partial_reason "$d" "$code" > "$d/partial"
+  nonblank "$d/partial" || rm -f "$d/partial"
   if nonblank "$d/report.md"; then echo "done" > "$d/status"          # a report exists → finished, whatever the exit code says
   elif [ "$code" = 124 ] || [ "$code" = 137 ]; then echo timeout > "$d/status"
   elif [ "$code" = died ]; then echo died > "$d/status"

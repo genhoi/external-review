@@ -26,7 +26,7 @@ review — a second opinion on code from other models
       --lens NAME[,NAME]                lens from prompts/<lang>/lenses (correctness, security, ops, tests)
       --blind                           strip intent and "known decisions" from the brief
       --prompt-file FILE                your own prompt instead of protocol+brief (experiments)
-      --timeout SEC                     per-reviewer limit (default 2700)
+      --timeout SEC                     per-reviewer limit (default 5400)
       --deps copy|hardlink|symlink|none how ignored dependencies get into the snapshot (default: REVIEW_DEPS=copy)
       --link PATH                       extra dependency path to bring in (repeatable;
                                         default: vendor node_modules .venv .env .env.local .env.test)
@@ -211,7 +211,11 @@ cmd_run() {
   fi
   if [ "$mode" = "plan" ]; then
     cp "$plan" "$run/plan.md"
-    { echo; echo "---"; echo; echo "# Document under review (plan.md)"; echo; cat "$plan"; } >> "$run/prompt.md"
+    # design-review addendum: what to verify when the code does not exist yet (skipped with --prompt-file)
+    local doc_head="# Document under review (plan.md)"
+    [ "$lang" != ru ] || doc_head="# Документ на ревью (plan.md)"
+    [ -n "$prompt_file" ] || { echo; cat "$pdir/plan.md"; } >> "$run/prompt.md"
+    { echo; echo "---"; echo; echo "$doc_head"; echo; cat "$plan"; } >> "$run/prompt.md"
   fi
 
   local list
@@ -298,7 +302,8 @@ cmd_status() {
   local r d st ex
   for r in $(run_reviewers "$run"); do
     d="$run/$r"; st="$(status_of "$run" "$r")"; ex="$(cat "$d/exit" 2>/dev/null || true)"
-    if [ "$st" = "done" ] && [ -n "$ex" ] && [ "$ex" != 0 ]; then st="done(exit $ex)"; fi
+    if [ "$st" = "done" ] && [ -f "$d/partial" ]; then st="done($(head -c 60 "$d/partial" | tr -d '\n'))"
+    elif [ "$st" = "done" ] && [ -n "$ex" ] && [ "$ex" != 0 ]; then st="done(exit $ex)"; fi
     printf '%-14s %-8s %s\n' "$r $st" "$(elapsed "$d")" "$(py progress "$(cat "$d/format")" "$d/raw" 2>/dev/null)"
   done
 }

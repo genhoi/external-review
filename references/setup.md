@@ -63,7 +63,7 @@ model does not hallucinate and follows the protocol.
 | `EXTERNAL_REVIEW_NO_USAGE` | — | `1` disables the local usage journal (`usage.jsonl`) |
 | `EXTERNAL_REVIEW_REPO` | `genhoi/external-review` | where `review feedback --issue` posts |
 | `EXTERNAL_REVIEW_HOME` | `~/.local/state/external-review` | runs, snapshots, config dirs |
-| `EXTERNAL_REVIEW_TIMEOUT` | `2700` | seconds per reviewer |
+| `EXTERNAL_REVIEW_TIMEOUT` | `5400` | seconds per reviewer (a kill before the report is written loses the run) |
 | `GLM_MODEL` / `KIMI_MODEL` / `OPUS_MODEL` / `GROK_MODEL` / `CODEX_MODEL` / `KIMI_CLI_MODEL` | `review config` | reviewer model (prefer `review config set`) |
 | `GROK_EFFORT` | `xhigh` | grok effort (maximum) |
 | `CODEX_EFFORT` | `ultra` | codex effort; `ultra`/`max` exist only on `gpt-5.6-sol`/`-terra`, older models cap at `xhigh` |
